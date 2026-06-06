@@ -1,0 +1,31 @@
+name: Apt Tracker Auto Run
+
+on:
+  schedule:
+    - cron: '0 19 * * *'
+  workflow_dispatch: 
+
+jobs:
+  run-tracker:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+
+    - name: setup python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas gspread oauth2client
+
+    - name: make secret json
+      run: |
+        echo '${{ secrets.GOOGLE_SECRET_JSON }}' > secret.json
+
+    - name: run script
+      run: python apt_tracker.py
