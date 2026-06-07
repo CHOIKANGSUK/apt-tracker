@@ -6,7 +6,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
-# 1. 페이지 기본 설정 (모바일 대응 wide 유지)
+# 1. 페이지 기본 설정
 st.set_page_config(
     page_title="강석의 아파트 시세트래킹",
     page_icon="🏢",
@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v5_4():
+def load_data_v5_5():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -49,11 +49,11 @@ def get_apt_info(apt_name):
     else:
         return {"세대수": "- ", "준공": "-", "용적률": "-"}
 
-df = load_data_v5_4()
+df = load_data_v5_5()
 
 if not df.empty:
     st.title("🏢 강석의 아파트 시세트래킹")
-    st.caption("국토부 API 연동 실시간 대시보드 v5.4 (다중 비교 + 데이터 정렬 및 포맷 완벽 복구)")
+    st.caption("국토부 API 연동 실시간 대시보드 v5.5 (단지별 개별 평형 비교 기능 완벽 구축)")
     
     # 공통 데이터 전처리
     df['단지선택명'] = df['법정동'] + " " + df['아파트명']
@@ -62,7 +62,7 @@ if not df.empty:
     df['월'] = df['거래일자'].dt.strftime('%y년 %m월')
     df['월별_정렬기준'] = df['거래일자'].dt.to_period('M')
 
-    # 상단 탭 구성 (유실되었던 탭 기능 전면 복구)
+    # 상단 탭 구성
     tab1, tab2 = st.tabs(["📊 단일 단지 시황 분석", "⚖️ 다중 단지 비교 평가"])
     
     # ==================== TAB 1: 단일 단지 시황 분석 ====================
@@ -83,7 +83,6 @@ if not df.empty:
             st.markdown(f"**정보:** {info['세대수']} | {info['준공']} 준공 | 용적률 {info['용적률']}")
             st.markdown("---")
             
-            # 월별 통계 추출 (평균가, 거래량)
             monthly_stats = final_df.groupby('월별_정렬기준').agg(
                 월=('월', 'first'),
                 평균가=('거래금액(숫자)', 'mean'),
@@ -99,7 +98,6 @@ if not df.empty:
             min_price = final_df.loc[min_idx, '거래금액(숫자)']
             drop_rate = ((recent_price - max_price) / max_price) * 100
             
-            # 상단 지표 영역 (모바일 대응)
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("최근 실거래가", f"{recent_price:,}만", f"{final_df.iloc[-1]['거래일자'].strftime('%Y-%m-%d')}")
@@ -114,7 +112,6 @@ if not df.empty:
                 
             st.markdown("---")
             
-            # 시세 추이 그래프 복구
             st.write("📈 시세 추이 및 거래량")
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
@@ -158,9 +155,7 @@ if not df.empty:
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # 실거래 내역 리스트 정렬 및 포맷 적용
             st.write("📋 전체 실거래 내역 리스트")
-            
             final_df['비고'] = ""
             final_df.loc[max_idx, '비고'] = "🔴 최고가"
             final_df.loc[min_idx, '비고'] = "🔵 최저가"
@@ -168,80 +163,94 @@ if not df.empty:
             display_df = final_df[['거래일자', '층', '거래금액(숫자)', '비고']].copy()
             display_df['거래일자'] = display_df['거래일자'].dt.strftime('%Y-%m-%d')
             display_df = display_df.sort_values(by='거래일자', ascending=False)
-            
-            # 컬럼명 변경 및 세단위 콤마 서식 적용
             display_df.columns = ['거래일자', '층', '거래금액(만)', '비고']
             
-            # 표 디자인 콘텐트 제어 (가운데 정렬 + 천단위 쉼표 포맷 보장)
-            styled_df = display_df.style.format({
-                '거래금액(만)': '{:,.0f}'
-            }).set_properties(**{
-                'text-align': 'center'
-            })
-            
+            styled_df = display_df.style.format({'거래금액(만)': '{:,.0f}'}).set_properties(**{'text-align': 'center'})
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
         else:
             st.warning("선택한 평형의 거래 데이터가 존재하지 않습니다.")
 
-    # ==================== TAB 2: 다중 단지 비교 평가 ====================
+    # ==================== TAB 2: 다중 단지 비교 평가 (평형 조건 고도화) ====================
     with tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
-        st.markdown("여러 아파트 단지를 동시에 선택하여 가격 흐름과 트렌드를 통합 비교합니다.")
+        st.markdown("비교할 단지들을 선택한 후, **각 단지별로 비교 대상 평형을 각각 지정**하여 정밀하게 비교합니다.")
         
         all_apts = sorted(df['단지선택명'].unique())
         selected_apts = st.multiselect("비교할 아파트 단지들을 선택하세요", all_apts, default=all_apts[:2] if len(all_apts) >= 2 else all_apts)
         
         if selected_apts:
-            comp_df = df[df['단지선택명'].isin(selected_apts)].copy()
+            # 단지별 선택된 평형 정보를 담을 딕셔너리
+            apt_pyung_mapping = {}
             
-            # 월별 단지별 평균 거래금액 피벗 생성
-            comp_stats = comp_df.groupby(['월별_정렬기준', '단지선택명']).agg(
-                월=('월', 'first'),
-                평균가=('거래금액(숫자)', 'mean')
-            ).reset_index()
-            comp_stats['평균가'] = comp_stats['평균가'].round(0).astype(int)
+            st.markdown("#### 🔍 단지별 비교 평형(전용면적) 지정")
+            # 선택된 단지 수에 맞춰 화면 분할 배치하여 사용자 UI 레이아웃 최적화
+            cols = st.columns(min(len(selected_apts), 3)) 
+            for idx, apt in enumerate(selected_apts):
+                with cols[idx % 3]:
+                    apt_df = df[df['단지선택명'] == apt]
+                    available_pyungs = sorted(apt_df['평형'].unique())
+                    # 단지별 평형 선택창 생성 (동적 key 부여)
+                    chosen_pyung = st.selectbox(f"{apt}", available_pyungs, key=f"comp_pyung_{idx}")
+                    apt_pyung_mapping[apt] = chosen_pyung
             
-            # 비교 그래프 그리기
-            fig_comp = go.Figure()
-            for apt in selected_apts:
-                apt_data = comp_stats[comp_stats['단지선택명'] == apt].sort_values('월별_정렬기준')
-                fig_comp.add_trace(go.Scatter(
-                    x=apt_data['월'], y=apt_data['평균가'],
-                    mode='lines+markers', name=apt,
-                    line=dict(width=2.5),
-                    connectgaps=True
-                ))
-            
-            fig_comp.update_layout(
-                margin=dict(l=10, r=10, t=30, b=10),
-                hovermode='x unified',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-                paper_bgcolor='white', plot_bgcolor='white'
-            )
-            fig_comp.update_yaxes(title_text="월평균 거래금액(만)", showgrid=True, gridcolor='#f1f5f9')
-            st.plotly_chart(fig_comp, use_container_width=True)
-            
-            # 요약 데이터프레임 표시 (가운데 정렬 + 포맷 적용)
-            st.write("📊 단지별 종합 요약 지표")
-            summary_records = []
-            for apt in selected_apts:
-                apt_full = comp_df[comp_df['단지선택명'] == apt]
-                if not apt_full.empty:
-                    recent = apt_full.iloc[-1]['거래금액(숫자)']
-                    mx = apt_full['거래금액(숫자)'].max()
-                    mn = apt_full['거래금액(숫자)'].min()
-                    dr = ((recent - mx) / mx) * 100
-                    summary_records.append({
-                        "단지명": apt, "최근거래가(만)": recent, "역대최고가(만)": mx, "역대최저가(만)": mn, "고점대비하락률": f"{dr:.1f}%"
-                    })
-            
-            summary_df = pd.DataFrame(summary_records)
-            styled_summary = summary_df.style.format({
-                '최근거래가(만)': '{:,.0f}', '역대최고가(만)': '{:,.0f}', '역대최저가(만)': '{:,.0f}'
-            }).set_properties(**{
-                'text-align': 'center'
-            })
-            st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+            # 각 단지별로 선택된 평형 데이터만 필터링하여 결합
+            matched_records = []
+            for apt, pyung in apt_pyung_mapping.items():
+                target_condition = (df['단지선택명'] == apt) & (df['평형'] == pyung)
+                matched_records.append(df[target_condition])
+                
+            if matched_records:
+                comp_df = pd.concat(matched_records)
+                comp_df['비교단지명'] = comp_df['단지선택명'] + " (" + comp_df['평형'].astype(str) + "㎡)"
+                
+                # 월별 통계 재계산
+                comp_stats = comp_df.groupby(['월별_정렬기준', '비교단지명']).agg(
+                    월=('월', 'first'),
+                    평균가=('거래금액(숫자)', 'mean')
+                ).reset_index()
+                comp_stats['평균가'] = comp_stats['평균가'].round(0).astype(int)
+                
+                # 1. 정밀 비교 그래프 시각화
+                fig_comp = go.Figure()
+                for label in sorted(comp_df['비교단지명'].unique()):
+                    label_data = comp_stats[comp_stats['비교단지명'] == label].sort_values('월별_정렬기준')
+                    fig_comp.add_trace(go.Scatter(
+                        x=label_data['월'], y=label_data['평균가'],
+                        mode='lines+markers', name=label,
+                        line=dict(width=2.5),
+                        connectgaps=True
+                    ))
+                
+                fig_comp.update_layout(
+                    margin=dict(l=10, r=10, t=30, b=10),
+                    hovermode='x unified',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                    paper_bgcolor='white', plot_bgcolor='white'
+                )
+                fig_comp.update_yaxes(title_text="월평균 거래금액(만)", showgrid=True, gridcolor='#f1f5f9')
+                st.plotly_chart(fig_comp, use_container_width=True)
+                
+                # 2. 요약 지표 테이블 시각화 (가운데 정렬 + 포맷팅 보장)
+                st.write("📊 평형 매칭 종합 요약 지표")
+                summary_records = []
+                for label in sorted(comp_df['비교단지명'].unique()):
+                    unit_df = comp_df[comp_df['비교단지명'] == label]
+                    if not unit_df.empty:
+                        recent = unit_df.iloc[-1]['거래금액(숫자)']
+                        mx = unit_df['거래금액(숫자)'].max()
+                        mn = unit_df['거래금액(숫자)'].min()
+                        dr = ((recent - mx) / mx) * 100
+                        summary_records.append({
+                            "비교 대상 단지 (평형)": label, "최근거래가(만)": recent, "역대최고가(만)": mx, "역대최저가(만)": mn, "고점대비하락률": f"{dr:.1f}%"
+                        })
+                
+                summary_df = pd.DataFrame(summary_records)
+                styled_summary = summary_df.style.format({
+                    '최근거래가(만)': '{:,.0f}', '역대최고가(만)': '{:,.0f}', '역대최저가(만)': '{:,.0f}'
+                }).set_properties(**{
+                    'text-align': 'center'
+                })
+                st.dataframe(styled_summary, use_container_width=True, hide_index=True)
         else:
             st.info("비교 분석을 진행할 아파트 단지를 1개 이상 선택해 주세요.")
 else:
