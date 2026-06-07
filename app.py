@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v5_5():
+def load_data_v5_6():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -27,6 +27,7 @@ def load_data_v5_5():
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
+        # 실제 날짜 객체로 변환 (정렬의 기준)
         df['거래일자'] = pd.to_datetime(df['거래일자'])
         df = df.sort_values(by='거래일자', ascending=True)
         return df
@@ -49,18 +50,21 @@ def get_apt_info(apt_name):
     else:
         return {"세대수": "- ", "준공": "-", "용적률": "-"}
 
-df = load_data_v5_5()
+df = load_data_v5_6()
 
 if not df.empty:
     st.title("🏢 강석의 아파트 시세트래킹")
-    st.caption("국토부 API 연동 실시간 대시보드 v5.5 (단지별 개별 평형 비교 기능 완벽 구축)")
+    st.caption("국토부 API 연동 실시간 대시보드 v5.6 (X축 날짜 섞임 문제 완벽 해결)")
     
     # 공통 데이터 전처리
     df['단지선택명'] = df['법정동'] + " " + df['아파트명']
     df['거래금액(숫자)'] = df['거래금액(만)'].astype(str).str.replace(',', '').astype(int)
     df['평형'] = df['전용면적(㎡)'].apply(lambda x: round(float(x)))
-    df['월'] = df['거래일자'].dt.strftime('%y년 %m월')
-    df['월별_정렬기준'] = df['거래일자'].dt.to_period('M')
+    
+    # X축 표기용 한글 년월 생성 (탭1 전용)
+    df['월_한글텍스트'] = df['거래일자'].dt.strftime('%y년 %m월')
+    # 실제 정렬용 월 단위 날짜 생성 (탭2 비교 분석 전용)
+    df['월_날짜객체'] = df['거래일자'].dt.to_period('M').dt.to_timestamp()
 
     # 상단 탭 구성
     tab1, tab2 = st.tabs(["📊 단일 단지 시황 분석", "⚖️ 다중 단지 비교 평가"])
@@ -83,8 +87,8 @@ if not df.empty:
             st.markdown(f"**정보:** {info['세대수']} | {info['준공']} 준공 | 용적률 {info['용적률']}")
             st.markdown("---")
             
-            monthly_stats = final_df.groupby('월별_정렬기준').agg(
-                월=('월', 'first'),
+            monthly_stats = final_df.groupby('월_날짜객체').agg(
+                월텍스트=('월_한글텍스트', 'first'),
                 평균가=('거래금액(숫자)', 'mean'),
                 거래량=('거래금액(숫자)', 'count')
             ).reset_index()
@@ -116,30 +120,31 @@ if not df.empty:
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
             fig.add_trace(go.Bar(
-                x=monthly_stats['월'], y=monthly_stats['거래량'], 
+                x=monthly_stats['월텍스트'], y=monthly_stats['거래량'], 
                 name='월 거래량', marker_color='rgba(200, 220, 240, 0.6)'
             ), secondary_y=True)
             
             fig.add_trace(go.Scatter(
-                x=final_df['월'], y=final_df['거래금액(숫자)'], 
+                x=final_df['월_한글텍스트'], y=final_df['거래금액(숫자)'], 
                 mode='markers', name='개별 실거래',
                 marker=dict(size=7, color='rgba(135, 206, 250, 0.8)'),
                 hovertemplate='금액: %{y}만원'
             ), secondary_y=False)
             
             fig.add_trace(go.Scatter(
-                x=monthly_stats['월'], y=monthly_stats['평균가'], 
+                x=monthly_stats['월텍스트'], y=monthly_stats['평균가'], 
                 mode='lines+markers', name='월 평균가',
                 line=dict(color='#1e3a8a', width=3)
             ), secondary_y=False)
             
+            # 최고/최저 어노테이션 텍스트 기반 유지 (탭1 전용)
             fig.add_annotation(
-                x=final_df.loc[max_idx, '월'], y=final_df.loc[max_idx, '거래금액(숫자)'],
+                x=final_df.loc[max_idx, '월_한글텍스트'], y=final_df.loc[max_idx, '거래금액(숫자)'],
                 text="최고", showarrow=True, arrowhead=1, ax=0, ay=-30,
                 bgcolor="#ef4444", font=dict(color="white", size=10)
             )
             fig.add_annotation(
-                x=final_df.loc[min_idx, '월'], y=final_df.loc[min_idx, '거래금액(숫자)'],
+                x=final_df.loc[min_idx, '월_한글텍스트'], y=final_df.loc[min_idx, '거래금액(숫자)'],
                 text="최저", showarrow=True, arrowhead=1, ax=0, ay=30,
                 bgcolor="#3b82f6", font=dict(color="white", size=10)
             )
@@ -150,6 +155,8 @@ if not df.empty:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 paper_bgcolor='white', plot_bgcolor='white'
             )
+            # 탭1 X축 텍스트 정렬 보장 (강제 정렬 옵션 추가)
+            fig.update_xaxes(categoryorder='category ascending', showgrid=True, gridcolor='#f1f5f9')
             fig.update_yaxes(title_text="거래금액(만)", secondary_y=False, showgrid=True, gridcolor='#f1f5f9')
             fig.update_yaxes(title_text="거래량(건)", secondary_y=True, showgrid=False)
             
@@ -170,7 +177,7 @@ if not df.empty:
         else:
             st.warning("선택한 평형의 거래 데이터가 존재하지 않습니다.")
 
-    # ==================== TAB 2: 다중 단지 비교 평가 (평형 조건 고도화) ====================
+    # ==================== TAB 2: 다중 단지 비교 평가 (X축 섞임 문제 완벽 해결 버전) ====================
     with tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
         st.markdown("비교할 단지들을 선택한 후, **각 단지별로 비교 대상 평형을 각각 지정**하여 정밀하게 비교합니다.")
@@ -203,22 +210,26 @@ if not df.empty:
                 comp_df = pd.concat(matched_records)
                 comp_df['비교단지명'] = comp_df['단지선택명'] + " (" + comp_df['평형'].astype(str) + "㎡)"
                 
-                # 월별 통계 재계산
-                comp_stats = comp_df.groupby(['월별_정렬기준', '비교단지명']).agg(
-                    월=('월', 'first'),
+                # [문제 해결 핵심] 집계 시 한글 텍스트 대신 '월_날짜객체'를 사용하여 groupby 진행
+                comp_stats = comp_df.groupby(['월_날짜객체', '비교단지명']).agg(
                     평균가=('거래금액(숫자)', 'mean')
                 ).reset_index()
                 comp_stats['평균가'] = comp_stats['평균가'].round(0).astype(int)
                 
-                # 1. 정밀 비교 그래프 시각화
+                # 1. 정밀 비교 그래프 시각화 (X축 정렬 문제 해결 완료)
                 fig_comp = go.Figure()
                 for label in sorted(comp_df['비교단지명'].unique()):
-                    label_data = comp_stats[comp_stats['비교단지명'] == label].sort_values('월별_정렬기준')
+                    # [문제 해결 핵심] 날짜 기반으로 데이터 추출 및 정렬 보장
+                    label_data = comp_stats[comp_stats['비교단지명'] == label].sort_values('월_날짜객체')
                     fig_comp.add_trace(go.Scatter(
-                        x=label_data['월'], y=label_data['평균가'],
+                        # [문제 해결 핵심] X축 좌표로 텍스트 대신 실제 날짜(datetime) 전달
+                        x=label_data['월_날짜객체'], 
+                        y=label_data['평균가'],
                         mode='lines+markers', name=label,
                         line=dict(width=2.5),
-                        connectgaps=True
+                        connectgaps=True,
+                        # 호버링 시 날짜 포맷 정의
+                        hovertemplate='일자: %{x|%y년 %m월}<br>금액: %{y}만원'
                     ))
                 
                 fig_comp.update_layout(
@@ -227,10 +238,19 @@ if not df.empty:
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
                     paper_bgcolor='white', plot_bgcolor='white'
                 )
+                
+                # [문제 해결 핵심] Plotly 엔진에게 X축이 날짜(date)임을 명시하고, 화면에 보일 때만 한글 포맷으로 변환
+                fig_comp.update_xaxes(
+                    type='date',
+                    tickformat="%y년 %m월", # 화면 표기 형식 정의
+                    dtick="M1", # 1개월 단위로 눈금 표시
+                    ticklabelmode="period", # 눈금 라벨 위치 조정
+                    showgrid=True, gridcolor='#f1f5f9'
+                )
                 fig_comp.update_yaxes(title_text="월평균 거래금액(만)", showgrid=True, gridcolor='#f1f5f9')
                 st.plotly_chart(fig_comp, use_container_width=True)
                 
-                # 2. 요약 지표 테이블 시각화 (가운데 정렬 + 포맷팅 보장)
+                # 2. 요약 지표 테이블 시각화
                 st.write("📊 평형 매칭 종합 요약 지표")
                 summary_records = []
                 for label in sorted(comp_df['비교단지명'].unique()):
