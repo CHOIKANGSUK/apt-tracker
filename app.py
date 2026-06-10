@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 1. 페이지 기본 설정 (모바일 대응 wide 유지)
 st.set_page_config(
@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_2():
+def load_data_v6_3():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -65,7 +65,7 @@ def get_gu_name(dong_name):
     elif dong_name in ['성수동', '옥수동', '금호동', '행당동']: return '성동구'
     else: return '기타/미분류'
 
-df = load_data_v6_2()
+df = load_data_v6_3()
 
 if not df.empty:
     # 데이터 기본 전처리
@@ -76,8 +76,11 @@ if not df.empty:
     df['월_날짜객체'] = df['거래일자'].dt.to_period('M').dt.to_timestamp()
     df['자치구'] = df['법정동'].apply(get_gu_name)
 
+    # 역대 최고가/최저가 계산용 전역 딕셔너리 구축 (브리핑 피드 추출용)
+    max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
+
     st.title("🏢 강석의 아파트 시세트래킹 포털")
-    st.caption("국토부 API 연동 실시간 대시보드 v6.2 (실거래 테이블 오류 패치 완료)")
+    st.caption("국토부 API 연동 실시간 대시보드 v6.3 (7일 시황 브리핑 뉴스피드 엔진 탑재)")
 
     # ==================== 상단 자치구 퀵 필터 시스템 ====================
     if 'selected_gu' not in st.session_state:
@@ -100,6 +103,49 @@ if not df.empty:
                 if st.button(button_label, key=f"gu_btn_{gu}", use_container_width=True):
                     st.session_state['selected_gu'] = gu
                     st.rerun()
+
+    # ==================== [아이디어 2] 최근 7일 시황 브리핑 피드 엔진 ====================
+    st.markdown("### 🔔 실시간 관심 지역 시황 브리핑 센터")
+    
+    # 최근 7일 기준선 설정 (가장 최근 데이터 일자로부터 7일 전)
+    latest_data_date = df['거래일자'].max()
+    seven_days_ago = latest_data_date - timedelta(days=7)
+    recent_7d_df = df[df['거래일자'] >= seven_days_ago].copy()
+    
+    briefing_messages = []
+    
+    if not recent_7d_df.empty:
+        for idx, row in recent_7d_df.sort_values(by='거래일자', ascending=False).iterrows():
+            apt_key = row['단지선택명']
+            pyung_key = row['평형']
+            price = row['거래금액(숫자)']
+            date_str = row['거래일자'].strftime('%m/%d')
+            gu_belong = row['자치구']
+            
+            # 단지 평형의 역대 최고가 호출
+            max_p = max_prices.get((apt_key, pyung_key), price)
+            drop_r = ((price - max_p) / max_p) * 100 if max_p > 0 else 0
+            
+            # 조건 1: 🔴 신고가 감지 (최고가와 같거나 큰 경우)
+            if price >= max_p and max_p > 0:
+                briefing_messages.append(f"🔴 **[{gu_belong}] 신고가 발생 ({date_str})** | {apt_key} {pyung_key}㎡형이 **{price:,}만원**에 역대 최고가로 거래되었습니다.")
+            # 조건 2: 📉 급매/가격조정 감지 (최고가 대비 -15% 이하 하락)
+            elif drop_r <= -15.0:
+                briefing_messages.append(f"📉 **[{gu_belong}] 가격 조정 포착 ({date_str})** | {apt_key} {pyung_key}㎡형이 고점 대비 **{drop_r:.1f}%** 조정된 **{price:,}만원**에 거래되었습니다.")
+            # 조건 3: 일반 최신 실거래 요약
+            else:
+                briefing_messages.append(f"📢 **[{gu_belong}] 신규 실거래 수집 ({date_str})** | {apt_key} {pyung_key}㎡형 {row['층']}층이 **{price:,}만원**에 거래 완료되었습니다.")
+    else:
+        briefing_messages.append("⚪ **최근 7일간 서울 관심 지역 내에 새로 접수된 실거래 내역이 없습니다.** 국토부 API에 데이터가 업데이트되면 실시간 피드가 활성화됩니다.")
+
+    # 브리핑 메시지를 스타일리시한 뉴스 컴팩트 박스 형태로 출력 (최대 4개 노출하여 간결성 유지)
+    briefing_html = "<div style='background-color:#f8fafc; border-left:5px solid #1e3a8a; padding:12px; border-radius:4px; margin-bottom:15px;'>"
+    for msg in briefing_messages[:4]:
+        briefing_html += f"<p style='margin: 0 0 6px 0; font-size:11pt; color:#334155;'>{msg}</p>"
+    briefing_html += "</div>"
+    st.markdown(briefing_html, unsafe_allow_html=True)
+
+    # ----------------------------------------------------------------------------------
 
     if st.session_state['selected_gu'] == '전체구':
         gu_filtered_df = df.copy()
@@ -203,7 +249,6 @@ if not df.empty:
                 st.plotly_chart(fig, use_container_width=True)
                 
                 st.write("📋 전체 실거래 내역 리스트")
-                # [오류 해결 포인트] 비고 컬럼을 다시 정의하고 최고/최저 텍스트를 할당합니다.
                 final_df['비고'] = ""
                 final_df.loc[max_idx, '비고'] = "🔴 최고가"
                 final_df.loc[min_idx, '비고'] = "🔵 최저가"
