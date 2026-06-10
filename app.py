@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_1():
+def load_data_v6_2():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -65,7 +65,7 @@ def get_gu_name(dong_name):
     elif dong_name in ['성수동', '옥수동', '금호동', '행당동']: return '성동구'
     else: return '기타/미분류'
 
-df = load_data_v6_1()
+df = load_data_v6_2()
 
 if not df.empty:
     # 데이터 기본 전처리
@@ -77,13 +77,12 @@ if not df.empty:
     df['자치구'] = df['법정동'].apply(get_gu_name)
 
     st.title("🏢 강석의 아파트 시세트래킹 포털")
-    st.caption("국토부 API 연동 실시간 대시보드 v6.1 (전체구 마스터 필터링 시스템 탑재)")
+    st.caption("국토부 API 연동 실시간 대시보드 v6.2 (실거래 테이블 오류 패치 완료)")
 
-    # ==================== 상단 자치구 퀵 필터 시스템 (전체구 추가) ====================
+    # ==================== 상단 자치구 퀵 필터 시스템 ====================
     if 'selected_gu' not in st.session_state:
         st.session_state['selected_gu'] = '중랑구'
 
-    # '전체구'를 리스트 맨 앞에 배치하여 마스터 권한 부여
     seoul_gus = [
         "전체구", "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구", "노원구", "도봉구",
         "동대문구", "동작구", "마포구", "서대문구", "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구",
@@ -93,7 +92,6 @@ if not df.empty:
     with st.expander(f"🗺️ 현재 선택된 지역: [ {st.session_state['selected_gu']} ] (터치하여 변경)", expanded=False):
         st.markdown("<p style='font-size:11pt; color:gray; margin-bottom:5px;'>'전체구'를 누르시면 서울 전역의 아파트 단지를 조건 없이 자유롭게 조회 및 비교할 수 있습니다.</p>", unsafe_allow_html=True)
         
-        # 총 26개 항목이므로 가로 4열 배치 시 깔끔하게 정렬됩니다.
         grid_cols = st.columns(4)
         for idx, gu in enumerate(seoul_gus):
             button_label = f"🌐 {gu}" if gu == "전체구" and gu == st.session_state['selected_gu'] else (f"📍 {gu}" if gu == st.session_state['selected_gu'] else gu)
@@ -103,7 +101,6 @@ if not df.empty:
                     st.session_state['selected_gu'] = gu
                     st.rerun()
 
-    # [핵심 로직 변경] 전체구 선택 시 필터링을 우회하여 전체 데이터 전달
     if st.session_state['selected_gu'] == '전체구':
         gu_filtered_df = df.copy()
     else:
@@ -206,6 +203,11 @@ if not df.empty:
                 st.plotly_chart(fig, use_container_width=True)
                 
                 st.write("📋 전체 실거래 내역 리스트")
+                # [오류 해결 포인트] 비고 컬럼을 다시 정의하고 최고/최저 텍스트를 할당합니다.
+                final_df['비고'] = ""
+                final_df.loc[max_idx, '비고'] = "🔴 최고가"
+                final_df.loc[min_idx, '비고'] = "🔵 최저가"
+                
                 display_df = final_df[['거래일자', '층', '거래금액(숫자)', '비고']].copy()
                 display_df['거래일자'] = display_df['거래일자'].dt.strftime('%Y-%m-%d')
                 display_df = display_df.sort_values(by='거래일자', ascending=False)
