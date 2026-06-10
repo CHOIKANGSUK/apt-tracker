@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_0():
+def load_data_v6_1():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -49,15 +49,11 @@ def get_apt_info(apt_name):
     else:
         return {"세대수": "- ", "준공": "-", "용적률": "-"}
 
-# === [아이디어 1] 법정동 기반 자치구 자동 매핑 사전 ===
+# 법정동 기반 자치구 자동 매핑 사전
 def get_gu_name(dong_name):
-    # 중랑구
     if dong_name in ['중화동', '상봉동', '면목동', '신내동', '망우동', '묵동']: return '중랑구'
-    # 성북구
     elif dong_name in ['상월곡동', '하월곡동', '길음동', '장위동', '석관동', '돈암동', '정릉동', '보문동']: return '성북구'
-    # 동대문구
     elif dong_name in ['이문동', '휘경동', '전농동', '답십리동', '장안동', '청량리동', '제기동', '용두동']: return '동대문구'
-    # 강남 4구 및 주요 지역 사전 확장 패치 기본 탑재
     elif dong_name in ['반포동', '방배동', '서초동', '잠원동']: return '서초구'
     elif dong_name in ['대치동', '압구정동', '삼성동', '개포동', '역삼동', '도곡동']: return '강남구'
     elif dong_name in ['잠실동', '신천동', '문정동', '가락동', '오금동']: return '송파구'
@@ -67,10 +63,9 @@ def get_gu_name(dong_name):
     elif dong_name in ['여의도동', '당산동', '신길동', '문래동']: return '영등포구'
     elif dong_name in ['한남동', '이촌동', '이태원동']: return '용산구'
     elif dong_name in ['성수동', '옥수동', '금호동', '행당동']: return '성동구'
-    # 데이터가 추가될 시 계속 확장 가능, 매핑되지 않은 새로운 동은 기본값으로 처리
     else: return '기타/미분류'
 
-df = load_data_v6_0()
+df = load_data_v6_1()
 
 if not df.empty:
     # 데이터 기본 전처리
@@ -79,51 +74,48 @@ if not df.empty:
     df['평형'] = df['전용면적(㎡)'].apply(lambda x: round(float(x)))
     df['월_한글텍스트'] = df['거래일자'].dt.strftime('%y년 %m월')
     df['월_날짜객체'] = df['거래일자'].dt.to_period('M').dt.to_timestamp()
-    
-    # [핵심] 수집된 법정동 데이터를 사전 기준으로 '자치구' 행으로 자동 분류
     df['자치구'] = df['법정동'].apply(get_gu_name)
 
     st.title("🏢 강석의 아파트 시세트래킹 포털")
-    st.caption("국토부 API 연동 실시간 대시보드 v6.0 (서울시 자치구별 퀵 탭 매핑 시스템 완료)")
+    st.caption("국토부 API 연동 실시간 대시보드 v6.1 (전체구 마스터 필터링 시스템 탑재)")
 
-    # ==================== [실까 스타일] 상단 자치구 퀵 필터 시스템 ====================
-    # 세션 상태를 활용하여 클릭한 자치구를 기억하게 만듭니다.
+    # ==================== 상단 자치구 퀵 필터 시스템 (전체구 추가) ====================
     if 'selected_gu' not in st.session_state:
-        st.session_state['selected_gu'] = '중랑구' # 강석님의 거주지인 중랑구를 기본값으로 세팅
+        st.session_state['selected_gu'] = '중랑구'
 
-    # 서울시 전체 25개 자치구 리스트 정의
+    # '전체구'를 리스트 맨 앞에 배치하여 마스터 권한 부여
     seoul_gus = [
-        "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구", "노원구", "도봉구",
+        "전체구", "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구", "노원구", "도봉구",
         "동대문구", "동작구", "마포구", "서대문구", "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구",
         "용산구", "은평구", "종로구", "중구", "중랑구"
     ]
 
-    # 접이식 메뉴를 활용하여 스마트폰 화면 자치 극소화
     with st.expander(f"🗺️ 현재 선택된 지역: [ {st.session_state['selected_gu']} ] (터치하여 변경)", expanded=False):
-        st.markdown("<p style='font-size:11pt; color:gray; margin-bottom:5px;'>원하시는 자치구를 누르면 아래 아파트 리스트가 자동으로 변경됩니다.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size:11pt; color:gray; margin-bottom:5px;'>'전체구'를 누르시면 서울 전역의 아파트 단지를 조건 없이 자유롭게 조회 및 비교할 수 있습니다.</p>", unsafe_allow_html=True)
         
-        # 모바일 바둑판(Grid) 배열화: 가로 4열 배치
+        # 총 26개 항목이므로 가로 4열 배치 시 깔끔하게 정렬됩니다.
         grid_cols = st.columns(4)
         for idx, gu in enumerate(seoul_gus):
-            # 현재 선택된 구의 버튼은 색상 강조 효과(기본 테마 적용)
-            button_label = f"📍 {gu}" if gu == st.session_state['selected_gu'] else gu
+            button_label = f"🌐 {gu}" if gu == "전체구" and gu == st.session_state['selected_gu'] else (f"📍 {gu}" if gu == st.session_state['selected_gu'] else gu)
             
             with grid_cols[idx % 4]:
                 if st.button(button_label, key=f"gu_btn_{gu}", use_container_width=True):
                     st.session_state['selected_gu'] = gu
-                    st.rerun() # 클릭 즉시 화면을 새로고침하여 데이터 필터 반영
+                    st.rerun()
 
-    # 선택된 자치구 데이터를 기반으로 전역 데이터 분리
-    gu_filtered_df = df[df['자치구'] == st.session_state['selected_gu']].copy()
+    # [핵심 로직 변경] 전체구 선택 시 필터링을 우회하여 전체 데이터 전달
+    if st.session_state['selected_gu'] == '전체구':
+        gu_filtered_df = df.copy()
+    else:
+        gu_filtered_df = df[df['자치구'] == st.session_state['selected_gu']].copy()
 
-    # 상단 메인 기능 분할 탭
+    # 상단 탭 구성
     tab1, tab2 = st.tabs(["📊 단일 단지 시황 분석", "⚖️ 다중 단지 비교 평가"])
     
     # ==================== TAB 1: 단일 단지 시황 분석 ====================
     with tab1:
         st.sidebar.header("📍 단지 및 평형 선택")
         
-        # 선택된 자치구 내에 존재하는 아파트 단지만 드롭다운에 노출시킴 (자동 하이패스 연동)
         if not gu_filtered_df.empty:
             apt_list = sorted(gu_filtered_df['단지선택명'].unique())
             selected_apt = st.sidebar.selectbox("단지 선택", apt_list, key="single_apt")
@@ -141,7 +133,7 @@ if not df.empty:
                 st.markdown("---")
                 
                 monthly_stats = final_df.groupby('월_날짜객체').agg(
-                    월텍스트=('월_한글텍text', 'first') if '월_한글텍text' in final_df.columns else ('월_한글텍스트', 'first'),
+                    월텍스트=('월_한글텍스트', 'first'),
                     평균가=('거래금액(숫자)', 'mean'),
                     거래량=('거래금액(숫자)', 'count')
                 ).reset_index()
@@ -214,10 +206,6 @@ if not df.empty:
                 st.plotly_chart(fig, use_container_width=True)
                 
                 st.write("📋 전체 실거래 내역 리스트")
-                final_df['비고'] = ""
-                final_df.loc[max_idx, '비고'] = "🔴 최고가"
-                final_df.loc[min_idx, '비고'] = "🔵 최저가"
-                
                 display_df = final_df[['거래일자', '층', '거래금액(숫자)', '비고']].copy()
                 display_df['거래일자'] = display_df['거래일자'].dt.strftime('%Y-%m-%d')
                 display_df = display_df.sort_values(by='거래일자', ascending=False)
@@ -228,15 +216,14 @@ if not df.empty:
             else:
                 st.warning("선택한 평형의 거래 데이터가 존재하지 않습니다.")
         else:
-            st.warning(f"현재 구글 시트에 [서울특별시 {st.session_state['selected_gu']}] 관련 축적 데이터가 아직 없습니다. 파이썬 로봇 수집 대상에 추가되면 자동으로 노출됩니다.")
+            st.warning(f"선택하신 지역구에 축적된 데이터가 아직 없습니다.")
 
     # ==================== TAB 2: 다중 단지 비교 평가 ====================
     with tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
-        st.markdown("선택하신 자치구 내외의 여러 아파트 단지 평형을 일대일 매칭하여 시세를 통합 비교합니다.")
+        st.markdown("비교할 단지들을 선택한 후, 각 단지별로 비교 대상 평형을 각각 지정하여 정밀하게 비교합니다.")
         
         all_apts = sorted(df['단지선택명'].unique())
-        # 비교 기능은 시야를 넓히기 위해 서울 전체 단지에서 자유롭게 멀티셀렉트 할 수 있도록 원형 보존
         selected_apts = st.multiselect("비교할 아파트 단지들을 선택하세요", all_apts, default=all_apts[:2] if len(all_apts) >= 2 else all_apts)
         
         if selected_apts:
