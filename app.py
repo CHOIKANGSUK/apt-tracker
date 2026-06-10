@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_3():
+def load_data_v6_4():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -65,7 +65,7 @@ def get_gu_name(dong_name):
     elif dong_name in ['성수동', '옥수동', '금호동', '행당동']: return '성동구'
     else: return '기타/미분류'
 
-df = load_data_v6_3()
+df = load_data_v6_4()
 
 if not df.empty:
     # 데이터 기본 전처리
@@ -76,11 +76,11 @@ if not df.empty:
     df['월_날짜객체'] = df['거래일자'].dt.to_period('M').dt.to_timestamp()
     df['자치구'] = df['법정동'].apply(get_gu_name)
 
-    # 역대 최고가/최저가 계산용 전역 딕셔너리 구축 (브리핑 피드 추출용)
+    # 역대 최고가/최저가 계산용 전역 딕셔너리 구축
     max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
 
     st.title("🏢 강석의 아파트 시세트래킹 포털")
-    st.caption("국토부 API 연동 실시간 대시보드 v6.3 (7일 시황 브리핑 뉴스피드 엔진 탑재)")
+    st.caption("국토부 API 연동 실시간 대시보드 v6.4 (네이버 부동산 스타일 컴팩트 카드 패치 완료)")
 
     # ==================== 상단 자치구 퀵 필터 시스템 ====================
     if 'selected_gu' not in st.session_state:
@@ -104,16 +104,13 @@ if not df.empty:
                     st.session_state['selected_gu'] = gu
                     st.rerun()
 
-    # ==================== [아이디어 2] 최근 7일 시황 브리핑 피드 엔진 ====================
+    # ==================== 최근 7일 시황 브리핑 피드 ====================
     st.markdown("### 🔔 실시간 관심 지역 시황 브리핑 센터")
-    
-    # 최근 7일 기준선 설정 (가장 최근 데이터 일자로부터 7일 전)
     latest_data_date = df['거래일자'].max()
     seven_days_ago = latest_data_date - timedelta(days=7)
     recent_7d_df = df[df['거래일자'] >= seven_days_ago].copy()
     
     briefing_messages = []
-    
     if not recent_7d_df.empty:
         for idx, row in recent_7d_df.sort_values(by='거래일자', ascending=False).iterrows():
             apt_key = row['단지선택명']
@@ -122,23 +119,18 @@ if not df.empty:
             date_str = row['거래일자'].strftime('%m/%d')
             gu_belong = row['자치구']
             
-            # 단지 평형의 역대 최고가 호출
             max_p = max_prices.get((apt_key, pyung_key), price)
             drop_r = ((price - max_p) / max_p) * 100 if max_p > 0 else 0
             
-            # 조건 1: 🔴 신고가 감지 (최고가와 같거나 큰 경우)
             if price >= max_p and max_p > 0:
                 briefing_messages.append(f"🔴 **[{gu_belong}] 신고가 발생 ({date_str})** | {apt_key} {pyung_key}㎡형이 **{price:,}만원**에 역대 최고가로 거래되었습니다.")
-            # 조건 2: 📉 급매/가격조정 감지 (최고가 대비 -15% 이하 하락)
             elif drop_r <= -15.0:
                 briefing_messages.append(f"📉 **[{gu_belong}] 가격 조정 포착 ({date_str})** | {apt_key} {pyung_key}㎡형이 고점 대비 **{drop_r:.1f}%** 조정된 **{price:,}만원**에 거래되었습니다.")
-            # 조건 3: 일반 최신 실거래 요약
             else:
                 briefing_messages.append(f"📢 **[{gu_belong}] 신규 실거래 수집 ({date_str})** | {apt_key} {pyung_key}㎡형 {row['층']}층이 **{price:,}만원**에 거래 완료되었습니다.")
     else:
-        briefing_messages.append("⚪ **최근 7일간 서울 관심 지역 내에 새로 접수된 실거래 내역이 없습니다.** 국토부 API에 데이터가 업데이트되면 실시간 피드가 활성화됩니다.")
+        briefing_messages.append("⚪ **최근 7일간 서울 관심 지역 내에 새로 접수된 실거래 내역이 없습니다.**")
 
-    # 브리핑 메시지를 스타일리시한 뉴스 컴팩트 박스 형태로 출력 (최대 4개 노출하여 간결성 유지)
     briefing_html = "<div style='background-color:#f8fafc; border-left:5px solid #1e3a8a; padding:12px; border-radius:4px; margin-bottom:15px;'>"
     for msg in briefing_messages[:4]:
         briefing_html += f"<p style='margin: 0 0 6px 0; font-size:11pt; color:#334155;'>{msg}</p>"
@@ -190,19 +182,47 @@ if not df.empty:
                 min_price = final_df.loc[min_idx, '거래금액(숫자)']
                 drop_rate = ((recent_price - max_price) / max_price) * 100
                 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("최근 실거래가", f"{recent_price:,}만", f"{final_df.iloc[-1]['거래일자'].strftime('%Y-%m-%d')}")
-                with col2:
-                    st.metric("역대 최고가", f"{max_price:,}만", f"{final_df.loc[max_idx, '거래일자'].strftime('%Y-%m-%d')}")
+                # === [아이디어 3] 네이버 부동산 스타일 컴팩트 카드 레이아웃 패치 ===
+                # 기존 st.metric을 모두 제거하고, 모바일 세로형 가독성을 극대화한 HTML/CSS 카드로 대체합니다.
+                card_cols = st.columns(2)
+                
+                with card_cols[0]:
+                    st.markdown(f"""
+                        <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 8px; text-align: center;'>
+                            <p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>최근 실거래가</p>
+                            <h3 style='margin:4px 0; color:#1e3a8a; font-size:16pt;'>{recent_price:,}만</h3>
+                            <p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.iloc[-1]['거래일자'].strftime('%Y-%m-%d')}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
                     
-                col3, col4 = st.columns(2)
-                with col3:
-                    st.metric("고점 대비 하락률", f"{drop_rate:.1f}%")
-                with col4:
-                    st.metric("역대 최저가", f"{min_price:,}만", f"{final_df.loc[min_idx, '거래일자'].strftime('%Y-%m-%d')}")
+                    st.markdown(f"""
+                        <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 8px; text-align: center;'>
+                            <p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>고점 대비 하락률</p>
+                            <h3 style='margin:4px 0; color:{"#ef4444" if drop_rate >= 0 else "#3b82f6"}; font-size:16pt;'>{drop_rate:.1f}%</h3>
+                            <p style='margin:0; color:#94a3b8; font-size:9pt;'>최고가 대비 변동폭</p>
+                        </div>
+                    """, unsafe_allow_html=True)
                     
-                st.markdown("---")
+                with card_cols[1]:
+                    st.markdown(f"""
+                        <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 8px; text-align: center;'>
+                            <p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최고가</p>
+                            <h3 style='margin:4px 0; color:#ef4444; font-size:16pt;'>{max_price:,}만</h3>
+                            <p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[max_idx, '거래일자'].strftime('%Y-%m-%d')}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown(f"""
+                        <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 8px; text-align: center;'>
+                            <p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최저가</p>
+                            <h3 style='margin:4px 0; color:#3b82f6; font-size:16pt;'>{min_price:,}만</h3>
+                            <p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[min_idx, '거래일자'].strftime('%Y-%m-%d')}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("<br>", unsafe_allow_html=True) # 카드와 그래프 사이 미세 간격 조정
+                
+                # ----------------------------------------------------------------------
                 
                 st.write("📈 시세 추이 및 거래량")
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
