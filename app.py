@@ -6,7 +6,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
-# 1. 페이지 기본 설정
+# 1. 페이지 기본 설정 (모바일 대응 wide 유지)
 st.set_page_config(
     page_title="강석의 아파트 시세트래킹",
     page_icon="🏢",
@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v5_6():
+def load_data_v6_0():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -27,7 +27,6 @@ def load_data_v5_6():
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # 실제 날짜 객체로 변환 (정렬의 기준)
         df['거래일자'] = pd.to_datetime(df['거래일자'])
         df = df.sort_values(by='거래일자', ascending=True)
         return df
@@ -35,7 +34,7 @@ def load_data_v5_6():
         st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
         return pd.DataFrame()
 
-# 아파트 정보
+# 아파트 메타 정보
 def get_apt_info(apt_name):
     if "중화동" in apt_name and "한신" in apt_name:
         return {"세대수": "1,544세대", "준공": "1997.10", "용적률": "376%"}
@@ -50,157 +49,207 @@ def get_apt_info(apt_name):
     else:
         return {"세대수": "- ", "준공": "-", "용적률": "-"}
 
-df = load_data_v5_6()
+# === [아이디어 1] 법정동 기반 자치구 자동 매핑 사전 ===
+def get_gu_name(dong_name):
+    # 중랑구
+    if dong_name in ['중화동', '상봉동', '면목동', '신내동', '망우동', '묵동']: return '중랑구'
+    # 성북구
+    elif dong_name in ['상월곡동', '하월곡동', '길음동', '장위동', '석관동', '돈암동', '정릉동', '보문동']: return '성북구'
+    # 동대문구
+    elif dong_name in ['이문동', '휘경동', '전농동', '답십리동', '장안동', '청량리동', '제기동', '용두동']: return '동대문구'
+    # 강남 4구 및 주요 지역 사전 확장 패치 기본 탑재
+    elif dong_name in ['반포동', '방배동', '서초동', '잠원동']: return '서초구'
+    elif dong_name in ['대치동', '압구정동', '삼성동', '개포동', '역삼동', '도곡동']: return '강남구'
+    elif dong_name in ['잠실동', '신천동', '문정동', '가락동', '오금동']: return '송파구'
+    elif dong_name in ['명일동', '고덕동', '상일동', '길동', '천호동', '암사동']: return '강동구'
+    elif dong_name in ['상계동', '중계동', '하계동', '공릉동', '월계동']: return '노원구'
+    elif dong_name in ['아현동', '공덕동', '도화동', '용강동', '상암동']: return '마포구'
+    elif dong_name in ['여의도동', '당산동', '신길동', '문래동']: return '영등포구'
+    elif dong_name in ['한남동', '이촌동', '이태원동']: return '용산구'
+    elif dong_name in ['성수동', '옥수동', '금호동', '행당동']: return '성동구'
+    # 데이터가 추가될 시 계속 확장 가능, 매핑되지 않은 새로운 동은 기본값으로 처리
+    else: return '기타/미분류'
+
+df = load_data_v6_0()
 
 if not df.empty:
-    st.title("🏢 강석의 아파트 시세트래킹")
-    st.caption("국토부 API 연동 실시간 대시보드 v5.6 (X축 날짜 섞임 문제 완벽 해결)")
-    
-    # 공통 데이터 전처리
+    # 데이터 기본 전처리
     df['단지선택명'] = df['법정동'] + " " + df['아파트명']
     df['거래금액(숫자)'] = df['거래금액(만)'].astype(str).str.replace(',', '').astype(int)
     df['평형'] = df['전용면적(㎡)'].apply(lambda x: round(float(x)))
-    
-    # X축 표기용 한글 년월 생성 (탭1 전용)
     df['월_한글텍스트'] = df['거래일자'].dt.strftime('%y년 %m월')
-    # 실제 정렬용 월 단위 날짜 생성 (탭2 비교 분석 전용)
     df['월_날짜객체'] = df['거래일자'].dt.to_period('M').dt.to_timestamp()
+    
+    # [핵심] 수집된 법정동 데이터를 사전 기준으로 '자치구' 행으로 자동 분류
+    df['자치구'] = df['법정동'].apply(get_gu_name)
 
-    # 상단 탭 구성
+    st.title("🏢 강석의 아파트 시세트래킹 포털")
+    st.caption("국토부 API 연동 실시간 대시보드 v6.0 (서울시 자치구별 퀵 탭 매핑 시스템 완료)")
+
+    # ==================== [실까 스타일] 상단 자치구 퀵 필터 시스템 ====================
+    # 세션 상태를 활용하여 클릭한 자치구를 기억하게 만듭니다.
+    if 'selected_gu' not in st.session_state:
+        st.session_state['selected_gu'] = '중랑구' # 강석님의 거주지인 중랑구를 기본값으로 세팅
+
+    # 서울시 전체 25개 자치구 리스트 정의
+    seoul_gus = [
+        "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구", "노원구", "도봉구",
+        "동대문구", "동작구", "마포구", "서대문구", "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구",
+        "용산구", "은평구", "종로구", "중구", "중랑구"
+    ]
+
+    # 접이식 메뉴를 활용하여 스마트폰 화면 자치 극소화
+    with st.expander(f"🗺️ 현재 선택된 지역: [ {st.session_state['selected_gu']} ] (터치하여 변경)", expanded=False):
+        st.markdown("<p style='font-size:11pt; color:gray; margin-bottom:5px;'>원하시는 자치구를 누르면 아래 아파트 리스트가 자동으로 변경됩니다.</p>", unsafe_allow_html=True)
+        
+        # 모바일 바둑판(Grid) 배열화: 가로 4열 배치
+        grid_cols = st.columns(4)
+        for idx, gu in enumerate(seoul_gus):
+            # 현재 선택된 구의 버튼은 색상 강조 효과(기본 테마 적용)
+            button_label = f"📍 {gu}" if gu == st.session_state['selected_gu'] else gu
+            
+            with grid_cols[idx % 4]:
+                if st.button(button_label, key=f"gu_btn_{gu}", use_container_width=True):
+                    st.session_state['selected_gu'] = gu
+                    st.rerun() # 클릭 즉시 화면을 새로고침하여 데이터 필터 반영
+
+    # 선택된 자치구 데이터를 기반으로 전역 데이터 분리
+    gu_filtered_df = df[df['자치구'] == st.session_state['selected_gu']].copy()
+
+    # 상단 메인 기능 분할 탭
     tab1, tab2 = st.tabs(["📊 단일 단지 시황 분석", "⚖️ 다중 단지 비교 평가"])
     
     # ==================== TAB 1: 단일 단지 시황 분석 ====================
     with tab1:
         st.sidebar.header("📍 단지 및 평형 선택")
-        apt_list = sorted(df['단지선택명'].unique())
-        selected_apt = st.sidebar.selectbox("단지 선택", apt_list, key="single_apt")
         
-        filtered_df = df[df['단지선택명'] == selected_apt].copy()
-        pyung_list = sorted(filtered_df['평형'].unique())
-        selected_pyung = st.sidebar.selectbox("평형 선택(㎡)", pyung_list, key="single_pyung")
-        
-        final_df = filtered_df[filtered_df['평형'] == selected_pyung].copy()
-        
-        if not final_df.empty:
-            info = get_apt_info(selected_apt)
-            st.subheader(f"📍 {selected_apt} ({selected_pyung}㎡)")
-            st.markdown(f"**정보:** {info['세대수']} | {info['준공']} 준공 | 용적률 {info['용적률']}")
-            st.markdown("---")
+        # 선택된 자치구 내에 존재하는 아파트 단지만 드롭다운에 노출시킴 (자동 하이패스 연동)
+        if not gu_filtered_df.empty:
+            apt_list = sorted(gu_filtered_df['단지선택명'].unique())
+            selected_apt = st.sidebar.selectbox("단지 선택", apt_list, key="single_apt")
             
-            monthly_stats = final_df.groupby('월_날짜객체').agg(
-                월텍스트=('월_한글텍스트', 'first'),
-                평균가=('거래금액(숫자)', 'mean'),
-                거래량=('거래금액(숫자)', 'count')
-            ).reset_index()
-            monthly_stats['평균가'] = monthly_stats['평균가'].round(0).astype(int)
+            filtered_df = gu_filtered_df[gu_filtered_df['단지선택명'] == selected_apt].copy()
+            pyung_list = sorted(filtered_df['평형'].unique())
+            selected_pyung = st.sidebar.selectbox("평형 선택(㎡)", pyung_list, key="single_pyung")
             
-            max_idx = final_df['거래금액(숫자)'].idxmax()
-            min_idx = final_df['거래금액(숫자)'].idxmin()
+            final_df = filtered_df[filtered_df['평형'] == selected_pyung].copy()
             
-            recent_price = final_df.iloc[-1]['거래금액(숫자)']
-            max_price = final_df.loc[max_idx, '거래금액(숫자)']
-            min_price = final_df.loc[min_idx, '거래금액(숫자)']
-            drop_rate = ((recent_price - max_price) / max_price) * 100
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("최근 실거래가", f"{recent_price:,}만", f"{final_df.iloc[-1]['거래일자'].strftime('%Y-%m-%d')}")
-            with col2:
-                st.metric("역대 최고가", f"{max_price:,}만", f"{final_df.loc[max_idx, '거래일자'].strftime('%Y-%m-%d')}")
+            if not final_df.empty:
+                info = get_apt_info(selected_apt)
+                st.subheader(f"📍 {selected_apt} ({selected_pyung}㎡)")
+                st.markdown(f"**정보:** {info['세대수']} | {info['준공']} 준공 | 용적률 {info['용적률']}")
+                st.markdown("---")
                 
-            col3, col4 = st.columns(2)
-            with col3:
-                st.metric("고점 대비 하락률", f"{drop_rate:.1f}%")
-            with col4:
-                st.metric("역대 최저가", f"{min_price:,}만", f"{final_df.loc[min_idx, '거래일자'].strftime('%Y-%m-%d')}")
+                monthly_stats = final_df.groupby('월_날짜객체').agg(
+                    월텍스트=('월_한글텍text', 'first') if '월_한글텍text' in final_df.columns else ('월_한글텍스트', 'first'),
+                    평균가=('거래금액(숫자)', 'mean'),
+                    거래량=('거래금액(숫자)', 'count')
+                ).reset_index()
+                monthly_stats['평균가'] = monthly_stats['평균가'].round(0).astype(int)
                 
-            st.markdown("---")
-            
-            st.write("📈 시세 추이 및 거래량")
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-            
-            fig.add_trace(go.Bar(
-                x=monthly_stats['월텍스트'], y=monthly_stats['거래량'], 
-                name='월 거래량', marker_color='rgba(200, 220, 240, 0.6)'
-            ), secondary_y=True)
-            
-            fig.add_trace(go.Scatter(
-                x=final_df['월_한글텍스트'], y=final_df['거래금액(숫자)'], 
-                mode='markers', name='개별 실거래',
-                marker=dict(size=7, color='rgba(135, 206, 250, 0.8)'),
-                hovertemplate='금액: %{y}만원'
-            ), secondary_y=False)
-            
-            fig.add_trace(go.Scatter(
-                x=monthly_stats['월텍스트'], y=monthly_stats['평균가'], 
-                mode='lines+markers', name='월 평균가',
-                line=dict(color='#1e3a8a', width=3)
-            ), secondary_y=False)
-            
-            # 최고/최저 어노테이션 텍스트 기반 유지 (탭1 전용)
-            fig.add_annotation(
-                x=final_df.loc[max_idx, '월_한글텍스트'], y=final_df.loc[max_idx, '거래금액(숫자)'],
-                text="최고", showarrow=True, arrowhead=1, ax=0, ay=-30,
-                bgcolor="#ef4444", font=dict(color="white", size=10)
-            )
-            fig.add_annotation(
-                x=final_df.loc[min_idx, '월_한글텍스트'], y=final_df.loc[min_idx, '거래금액(숫자)'],
-                text="최저", showarrow=True, arrowhead=1, ax=0, ay=30,
-                bgcolor="#3b82f6", font=dict(color="white", size=10)
-            )
-            
-            fig.update_layout(
-                margin=dict(l=10, r=10, t=30, b=10),
-                hovermode='x unified',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                paper_bgcolor='white', plot_bgcolor='white'
-            )
-            # 탭1 X축 텍스트 정렬 보장 (강제 정렬 옵션 추가)
-            fig.update_xaxes(categoryorder='category ascending', showgrid=True, gridcolor='#f1f5f9')
-            fig.update_yaxes(title_text="거래금액(만)", secondary_y=False, showgrid=True, gridcolor='#f1f5f9')
-            fig.update_yaxes(title_text="거래량(건)", secondary_y=True, showgrid=False)
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.write("📋 전체 실거래 내역 리스트")
-            final_df['비고'] = ""
-            final_df.loc[max_idx, '비고'] = "🔴 최고가"
-            final_df.loc[min_idx, '비고'] = "🔵 최저가"
-            
-            display_df = final_df[['거래일자', '층', '거래금액(숫자)', '비고']].copy()
-            display_df['거래일자'] = display_df['거래일자'].dt.strftime('%Y-%m-%d')
-            display_df = display_df.sort_values(by='거래일자', ascending=False)
-            display_df.columns = ['거래일자', '층', '거래금액(만)', '비고']
-            
-            styled_df = display_df.style.format({'거래금액(만)': '{:,.0f}'}).set_properties(**{'text-align': 'center'})
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                max_idx = final_df['거래금액(숫자)'].idxmax()
+                min_idx = final_df['거래금액(숫자)'].idxmin()
+                
+                recent_price = final_df.iloc[-1]['거래금액(숫자)']
+                max_price = final_df.loc[max_idx, '거래금액(숫자)']
+                min_price = final_df.loc[min_idx, '거래금액(숫자)']
+                drop_rate = ((recent_price - max_price) / max_price) * 100
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("최근 실거래가", f"{recent_price:,}만", f"{final_df.iloc[-1]['거래일자'].strftime('%Y-%m-%d')}")
+                with col2:
+                    st.metric("역대 최고가", f"{max_price:,}만", f"{final_df.loc[max_idx, '거래일자'].strftime('%Y-%m-%d')}")
+                    
+                col3, col4 = st.columns(2)
+                with col3:
+                    st.metric("고점 대비 하락률", f"{drop_rate:.1f}%")
+                with col4:
+                    st.metric("역대 최저가", f"{min_price:,}만", f"{final_df.loc[min_idx, '거래일자'].strftime('%Y-%m-%d')}")
+                    
+                st.markdown("---")
+                
+                st.write("📈 시세 추이 및 거래량")
+                fig = make_subplots(specs=[[{"secondary_y": True}]])
+                
+                fig.add_trace(go.Bar(
+                    x=monthly_stats['월텍스트'], y=monthly_stats['거래량'], 
+                    name='월 거래량', marker_color='rgba(200, 220, 240, 0.6)'
+                ), secondary_y=True)
+                
+                fig.add_trace(go.Scatter(
+                    x=final_df['월_한글텍스트'], y=final_df['거래금액(숫자)'], 
+                    mode='markers', name='개별 실거래',
+                    marker=dict(size=7, color='rgba(135, 206, 250, 0.8)'),
+                    hovertemplate='금액: %{y}만원'
+                ), secondary_y=False)
+                
+                fig.add_trace(go.Scatter(
+                    x=monthly_stats['월텍스트'], y=monthly_stats['평균가'], 
+                    mode='lines+markers', name='월 평균가',
+                    line=dict(color='#1e3a8a', width=3)
+                ), secondary_y=False)
+                
+                fig.add_annotation(
+                    x=final_df.loc[max_idx, '월_한글텍스트'], y=final_df.loc[max_idx, '거래금액(숫자)'],
+                    text="최고", showarrow=True, arrowhead=1, ax=0, ay=-30,
+                    bgcolor="#ef4444", font=dict(color="white", size=10)
+                )
+                fig.add_annotation(
+                    x=final_df.loc[min_idx, '월_한글텍스트'], y=final_df.loc[min_idx, '거래금액(숫자)'],
+                    text="최저", showarrow=True, arrowhead=1, ax=0, ay=30,
+                    bgcolor="#3b82f6", font=dict(color="white", size=10)
+                )
+                
+                fig.update_layout(
+                    margin=dict(l=10, r=10, t=30, b=10),
+                    hovermode='x unified',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    paper_bgcolor='white', plot_bgcolor='white'
+                )
+                fig.update_xaxes(categoryorder='category ascending', showgrid=True, gridcolor='#f1f5f9')
+                fig.update_yaxes(title_text="거래금액(만)", secondary_y=False, showgrid=True, gridcolor='#f1f5f9')
+                fig.update_yaxes(title_text="거래량(건)", secondary_y=True, showgrid=False)
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.write("📋 전체 실거래 내역 리스트")
+                final_df['비고'] = ""
+                final_df.loc[max_idx, '비고'] = "🔴 최고가"
+                final_df.loc[min_idx, '비고'] = "🔵 최저가"
+                
+                display_df = final_df[['거래일자', '층', '거래금액(숫자)', '비고']].copy()
+                display_df['거래일자'] = display_df['거래일자'].dt.strftime('%Y-%m-%d')
+                display_df = display_df.sort_values(by='거래일자', ascending=False)
+                display_df.columns = ['거래일자', '층', '거래금액(만)', '비고']
+                
+                styled_df = display_df.style.format({'거래금액(만)': '{:,.0f}'}).set_properties(**{'text-align': 'center'})
+                st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning("선택한 평형의 거래 데이터가 존재하지 않습니다.")
         else:
-            st.warning("선택한 평형의 거래 데이터가 존재하지 않습니다.")
+            st.warning(f"현재 구글 시트에 [서울특별시 {st.session_state['selected_gu']}] 관련 축적 데이터가 아직 없습니다. 파이썬 로봇 수집 대상에 추가되면 자동으로 노출됩니다.")
 
-    # ==================== TAB 2: 다중 단지 비교 평가 (X축 섞임 문제 완벽 해결 버전) ====================
+    # ==================== TAB 2: 다중 단지 비교 평가 ====================
     with tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
-        st.markdown("비교할 단지들을 선택한 후, **각 단지별로 비교 대상 평형을 각각 지정**하여 정밀하게 비교합니다.")
+        st.markdown("선택하신 자치구 내외의 여러 아파트 단지 평형을 일대일 매칭하여 시세를 통합 비교합니다.")
         
         all_apts = sorted(df['단지선택명'].unique())
+        # 비교 기능은 시야를 넓히기 위해 서울 전체 단지에서 자유롭게 멀티셀렉트 할 수 있도록 원형 보존
         selected_apts = st.multiselect("비교할 아파트 단지들을 선택하세요", all_apts, default=all_apts[:2] if len(all_apts) >= 2 else all_apts)
         
         if selected_apts:
-            # 단지별 선택된 평형 정보를 담을 딕셔너리
             apt_pyung_mapping = {}
-            
             st.markdown("#### 🔍 단지별 비교 평형(전용면적) 지정")
-            # 선택된 단지 수에 맞춰 화면 분할 배치하여 사용자 UI 레이아웃 최적화
             cols = st.columns(min(len(selected_apts), 3)) 
             for idx, apt in enumerate(selected_apts):
                 with cols[idx % 3]:
                     apt_df = df[df['단지선택명'] == apt]
                     available_pyungs = sorted(apt_df['평형'].unique())
-                    # 단지별 평형 선택창 생성 (동적 key 부여)
                     chosen_pyung = st.selectbox(f"{apt}", available_pyungs, key=f"comp_pyung_{idx}")
                     apt_pyung_mapping[apt] = chosen_pyung
             
-            # 각 단지별로 선택된 평형 데이터만 필터링하여 결합
             matched_records = []
             for apt, pyung in apt_pyung_mapping.items():
                 target_condition = (df['단지선택명'] == apt) & (df['평형'] == pyung)
@@ -210,25 +259,18 @@ if not df.empty:
                 comp_df = pd.concat(matched_records)
                 comp_df['비교단지명'] = comp_df['단지선택명'] + " (" + comp_df['평형'].astype(str) + "㎡)"
                 
-                # [문제 해결 핵심] 집계 시 한글 텍스트 대신 '월_날짜객체'를 사용하여 groupby 진행
                 comp_stats = comp_df.groupby(['월_날짜객체', '비교단지명']).agg(
                     평균가=('거래금액(숫자)', 'mean')
                 ).reset_index()
                 comp_stats['평균가'] = comp_stats['평균가'].round(0).astype(int)
                 
-                # 1. 정밀 비교 그래프 시각화 (X축 정렬 문제 해결 완료)
                 fig_comp = go.Figure()
                 for label in sorted(comp_df['비교단지명'].unique()):
-                    # [문제 해결 핵심] 날짜 기반으로 데이터 추출 및 정렬 보장
                     label_data = comp_stats[comp_stats['비교단지명'] == label].sort_values('월_날짜객체')
                     fig_comp.add_trace(go.Scatter(
-                        # [문제 해결 핵심] X축 좌표로 텍스트 대신 실제 날짜(datetime) 전달
-                        x=label_data['월_날짜객체'], 
-                        y=label_data['평균가'],
+                        x=label_data['월_날짜객체'], y=label_data['평균가'],
                         mode='lines+markers', name=label,
-                        line=dict(width=2.5),
-                        connectgaps=True,
-                        # 호버링 시 날짜 포맷 정의
+                        line=dict(width=2.5), connectgaps=True,
                         hovertemplate='일자: %{x|%y년 %m월}<br>금액: %{y}만원'
                     ))
                 
@@ -238,19 +280,10 @@ if not df.empty:
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
                     paper_bgcolor='white', plot_bgcolor='white'
                 )
-                
-                # [문제 해결 핵심] Plotly 엔진에게 X축이 날짜(date)임을 명시하고, 화면에 보일 때만 한글 포맷으로 변환
-                fig_comp.update_xaxes(
-                    type='date',
-                    tickformat="%y년 %m월", # 화면 표기 형식 정의
-                    dtick="M1", # 1개월 단위로 눈금 표시
-                    ticklabelmode="period", # 눈금 라벨 위치 조정
-                    showgrid=True, gridcolor='#f1f5f9'
-                )
+                fig_comp.update_xaxes(type='date', tickformat="%y년 %m월", dtick="M1", ticklabelmode="period", showgrid=True, gridcolor='#f1f5f9')
                 fig_comp.update_yaxes(title_text="월평균 거래금액(만)", showgrid=True, gridcolor='#f1f5f9')
                 st.plotly_chart(fig_comp, use_container_width=True)
                 
-                # 2. 요약 지표 테이블 시각화
                 st.write("📊 평형 매칭 종합 요약 지표")
                 summary_records = []
                 for label in sorted(comp_df['비교단지명'].unique()):
@@ -267,9 +300,7 @@ if not df.empty:
                 summary_df = pd.DataFrame(summary_records)
                 styled_summary = summary_df.style.format({
                     '최근거래가(만)': '{:,.0f}', '역대최고가(만)': '{:,.0f}', '역대최저가(만)': '{:,.0f}'
-                }).set_properties(**{
-                    'text-align': 'center'
-                })
+                }).set_properties(**{'text-align': 'center'})
                 st.dataframe(styled_summary, use_container_width=True, hide_index=True)
         else:
             st.info("비교 분석을 진행할 아파트 단지를 1개 이상 선택해 주세요.")
