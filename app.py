@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_9():
+def load_data_v6_10():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -62,12 +62,13 @@ def get_gu_name(dong_name):
     elif dong in ['미아동']: return '강북구'
     elif dong in ['독산동']: return '금천구'
     elif dong in ['창동']: return '도봉구'
+    elif dong in ['월계동']: return '노원구'
     return '기타/미분류'
 
 def get_apt_info(apt_name, pyung=None):
     return {"세대수": "-", "준공": "-", "용적률": "-", "구조": "-"}
 
-df = load_data_v6_9()
+df = load_data_v6_10()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'] + " " + df['아파트명']
@@ -79,7 +80,6 @@ if not df.empty:
 
     max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
 
-    # 수도권 전역 랜드마크 마스터 맵 정의
     landmark_dict = {
         "파주": "파주", "일산서구": "일산서구", "일산동구": "일산동구", "덕양구": "덕양구", "의정부": "의정부",
         "김포": "김포", "은평구": "은평구", "강북구": "강북구", "도봉구": "도봉구", "남양주": "남양주",
@@ -135,6 +135,7 @@ if not df.empty:
                         "active": True
                     }
 
+            # [수정포인트] 스트림릿 코드블록 방지를 위해 다중문자열(f""") 대신 한 줄씩 깔끔하게 결합합니다.
             html_map = "<div style='display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; background-color: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; overflow-x: auto;'>"
             
             for row_idx, row in enumerate(map_grid):
@@ -153,18 +154,16 @@ if not df.empty:
                         data = current_prices.get(loc, {"price": "-", "name": "미수집", "active": False})
                         
                         bg_style = "background-color: white; border: 1px solid #cbd5e1; box-shadow: 1px 1px 2px rgba(0,0,0,0.05);" if data['active'] else "background-color: #f1f5f9; border: 1px solid #e2e8f0; opacity: 0.45;"
-                        # [오류 해결] 헥사코드 문자열 앞뒤에 정확하게 따옴표를 봉인하여 구문 에러를 원천 복구했습니다.
                         text_color = "#1e3a8a" if data['active'] else "#94a3b8"
                         text_weight = "font-weight: bold;" if data['active'] else "font-weight: normal;"
                         title_bg = "background-color: #facc15; color: #1e293b;" if data['active'] else "background-color: #e2e8f0; color: #94a3b8;"
                         
-                        html_map += f"""
-                        <div style='{bg_style} border-radius: 4px; height: 68px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center;'>
-                            <div style='{title_bg} font-size: 7.5pt; font-weight: bold; padding: 2px 0; white-space: nowrap;'>{loc}</div>
-                            <div style='font-size: 7pt; color: #64748b; padding: 0 1px; white-space: nowrap; overflow: hidden;'>{data['name']}</div>
-                            <div style='font-size: 9.5pt; {text_weight} color: {text_color}; padding-bottom: 3px;'>{data['price']}</div>
-                        </div>
-                        """
+                        html_map += f"<div style='{bg_style} border-radius: 4px; height: 68px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center;'>"
+                        html_map += f"<div style='{title_bg} font-size: 7.5pt; font-weight: bold; padding: 2px 0; white-space: nowrap;'>{loc}</div>"
+                        html_map += f"<div style='font-size: 7pt; color: #64748b; padding: 0 1px; white-space: nowrap; overflow: hidden;'>{data['name']}</div>"
+                        html_map += f"<div style='font-size: 9.5pt; {text_weight} color: {text_color}; padding-bottom: 3px;'>{data['price']}</div>"
+                        html_map += "</div>"
+            
             html_map += "</div>"
             st.markdown(html_map, unsafe_allow_html=True)
 
@@ -204,7 +203,6 @@ if not df.empty:
                         st.session_state['selected_gu'] = gu
                         st.rerun()
 
-        # 브리핑 피드 센터
         st.markdown("### 🔔 실시간 관심 지역 시황 브리핑 센터")
         latest_data_date = df['거래일자'].max()
         seven_days_ago = latest_data_date - timedelta(days=7)
