@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_12():
+def load_data_v6_14():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -34,10 +34,9 @@ def load_data_v6_12():
         st.error(f"데이터 로드 오류: {e}")
         return pd.DataFrame()
 
-# === 법정동-자치구 정밀 매핑 (25개구 퍼즐 완성) ===
+# === 법정동-자치구 정밀 매핑 ===
 def get_gu_name(dong_name):
     dong = str(dong_name).strip()
-    # 강북 14개구
     if dong in ['중화동', '상봉동', '면목동', '신내동', '망우동', '묵동']: return '중랑구'
     elif dong in ['상월곡동', '하월곡동', '길음동', '장위동', '석관동', '돈암동', '정릉동', '보문동']: return '성북구'
     elif dong in ['이문동', '휘경동', '전농동', '답십리동', '장안동', '청량리동', '제기동', '용두동']: return '동대문구'
@@ -52,7 +51,6 @@ def get_gu_name(dong_name):
     elif dong in ['상계동', '중계동', '하계동', '공릉동', '월계동']: return '노원구'
     elif dong in ['은평동', '응암동', '불광동', '수색동']: return '은평구'
     elif dong in ['광장동', '구의동', '자양동', '화양동']: return '광진구'
-    # 강남 11개구
     elif dong in ['대치동', '압구정동', '삼성동', '개포동', '역삼동', '도곡동']: return '강남구'
     elif dong in ['반포동', '방배동', '서초동', '잠원동', '양재동']: return '서초구'
     elif dong in ['잠실동', '신천동', '문정동', '가락동', '오금동']: return '송파구'
@@ -69,7 +67,6 @@ def get_gu_name(dong_name):
 # 아파트 메타 정보 백과사전
 def get_apt_info(apt_name, pyung=None):
     info = {"세대수": "-", "준공": "-", "용적률": "-", "구조": "-"}
-    
     if "중화동" in apt_name and "한신" in apt_name:
         info.update({"세대수": "1,544세대", "준공": "1997.10 (29년차)", "용적률": "376%"})
         if pyung: info["구조"] = "방2/화1" if pyung <= 60 else "방3/화2"
@@ -107,7 +104,7 @@ def get_apt_info(apt_name, pyung=None):
         info.update({"세대수": "1,694세대", "준공": "2021.03 (5년차)", "용적률": "250%", "구조": "방3/화2"})
     elif "둔촌동" in apt_name and "올림픽파크포레온" in apt_name:
         info.update({"세대수": "12,032세대", "준공": "2025.01 (1년차)", "용적률": "273%", "구조": "방3/화2"})
-    elif "옥수동" in apt_name and "래미안옥수리버젠" in apt_name:
+    elif "옥수동" in apt_name and "래미안옥수리버" in apt_name:
         info.update({"세대수": "1,511세대", "준공": "2012.12 (14년차)", "용적률": "246%", "구조": "방3/화2"})
     elif "신정동" in apt_name and "목동힐스테이트" in apt_name:
         info.update({"세대수": "1,081세대", "준공": "2016.05 (10년차)", "용적률": "241%", "구조": "방3/화2"})
@@ -125,23 +122,22 @@ def get_apt_info(apt_name, pyung=None):
         info.update({"세대수": "780세대", "준공": "1996.03 (30년차)", "용적률": "242%", "구조": "방3/화2"})
     elif "신도림동" in apt_name and "신도림4차" in apt_name:
         info.update({"세대수": "853세대", "준공": "2003.05 (23년차)", "용적률": "299%", "구조": "방3/화2"})
-    elif "면목동" in apt_name and "사가정센트럴아이파크" in apt_name:
+    elif "면목동" in apt_name and "사가정센트럴" in apt_name:
         info.update({"세대수": "1,505세대", "준공": "2020.07 (6년차)", "용적률": "299%", "구조": "방3/화2"})
-    elif "응암동" in apt_name and "녹번역e편한세상캐슬" in apt_name:
+    elif "응암동" in apt_name and "녹번역e편한" in apt_name:
         info.update({"세대수": "2,569세대", "준공": "2020.05 (6년차)", "용적률": "242%", "구조": "방3/화2"})
-    elif "미아동" in apt_name and "북서울자이폴라리스" in apt_name:
+    elif "미아동" in apt_name and "북서울자이" in apt_name:
         info.update({"세대수": "1,045세대", "준공": "2024.08 (2년차)", "용적률": "240%", "구조": "방3/화2"})
     elif "독산동" in apt_name and "롯데캐슬골드파크3차" in apt_name:
         info.update({"세대수": "1,236세대", "준공": "2018.10 (8년차)", "용적률": "399%", "구조": "방3/화2"})
     elif "창동" in apt_name and "북한산아이파크" in apt_name:
         info.update({"세대수": "2,061세대", "준공": "2004.07 (22년차)", "용적률": "247%", "구조": "방3/화2"})
-        
     return info
 
-df = load_data_v6_12()
+df = load_data_v6_14()
 
 if not df.empty:
-    # 데이터 기본 마스터 전처리
+    # 기본 전처리
     df['단지선택명'] = df['법정동'] + " " + df['아파트명']
     df['거래금액(숫자)'] = df['거래금액(만)'].astype(str).str.replace(',', '').astype(int)
     df['평형'] = df['전용면적(㎡)'].apply(lambda x: round(float(x)))
@@ -151,39 +147,56 @@ if not df.empty:
 
     max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
 
-    # 서울 25개 자치구 대장주 매칭 키워드 정보
-    landmark_match_names = {
-        "중랑구": "사가정센트럴아이파크", "강남구": "래미안대치팰리스", "서초구": "아크로리버파크", "송파구": "리센츠",
+    # 랜드마크 검색 키워드 및 풀네임 사전
+    search_keywords = {
+        "중랑구": "사가정센트럴", "강남구": "래미안대치팰리스", "서초구": "아크로리버파크", "송파구": "리센츠",
         "용산구": "한가람", "동작구": "아크로리버하임", "종로구": "경희궁자이", "영등포구": "당산센트럴",
-        "중구": "서울역센트럴자이", "광진구": "광장힐스테이트", "마포구": "마포프레스티지자이", "강동구": "올림픽파크포레온",
-        "성동구": "래미안옥수리버zen" if "래미안옥수리버zen" in df['아파트명'].values else "래미안옥수리버젠",
-        "양천구": "목동힐스테이트", "강서구": "마곡엠밸리7단지", "서대문구": "e편한세상신촌",
-        "성북구": "래미안길음센터피스", "동대문구": "SKY-L65", "관악구": "e편한세상서울대입구", "노원구": "청구3",
-        "구로구": "신도림4차", "은평구": "녹번역e편한세상캐슬", "강북구": "북서울자이폴라리스", "금천구": "롯데캐슬골드파크3차",
+        "중구": "서울역센트럴", "광진구": "광장힐스테이트", "마포구": "마포프레스티지", "강동구": "올림픽파크포레온",
+        "성동구": "래미안옥수", "양천구": "목동힐스테이트", "강서구": "마곡엠밸리7", "서대문구": "e편한세상신촌",
+        "성북구": "래미안길음", "동대문구": "SKY", "관악구": "서울대입구", "노원구": "청구3",
+        "구로구": "신도림4차", "은평구": "녹번역", "강북구": "북서울자이", "금천구": "롯데캐슬골드파크3",
         "도봉구": "북한산아이파크"
     }
 
-    # 전체구 기준 랜드마크 마킹 처리
-    df['is_landmark'] = df['단지선택명'].apply(lambda x: any(k in x for k in landmark_match_names.values()))
+    display_names = {
+        "중랑구": "사가정센트럴아이파크", "강남구": "래미안대치팰리스", "서초구": "아크로리버파크", "송파구": "리센츠",
+        "용산구": "이촌동 한가람", "동작구": "아크로리버하임", "종로구": "경희궁자이", "영등포구": "당산센트럴아이파크",
+        "중구": "서울역센트럴자이", "광진구": "광장힐스테이트", "마포구": "마포프레스티지자이", "강동구": "올림픽파크포레온",
+        "성동구": "래미안옥수리버젠", "양천구": "목동힐스테이트", "강서구": "마곡엠밸리7단지", "서대문구": "e편한세상신촌",
+        "성북구": "래미안길음센터피스", "동대문구": "SKY-L65", "관악구": "e편한세상서울대입구", "노원구": "중계청구3차",
+        "구로구": "신도림4차 e편한세상", "은평구": "녹번역e편한세상캐슬", "강북구": "북서울자이폴라리스", "금천구": "롯데캐슬골드파크3차",
+        "도봉구": "북한산아이파크"
+    }
 
-    # 최상단 메인 3대 분기 탭 가동
+    df['is_landmark'] = df['단지선택명'].apply(lambda x: any(k in x for k in search_keywords.values()))
+
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.14")
+
     main_tab0, main_tab1, main_tab2 = st.tabs(["👑 서울 랜드마크 지도 & 지수", "📊 단지별 정밀 분석", "⚖️ 단지간 비교 평가"])
 
-    # ==================== TAB 0: 서울 25개 자치구 지도 & 거시 지수 ====================
+    # ==================== TAB 0: 서울 전용 그리드 지도 ====================
     with main_tab0:
         col_map, col_chart = st.columns([1.3, 1.0])
 
         with col_map:
-            st.subheader("🗺️ 서울 25개 자치구 랜드마크 시세판")
-            st.caption("서울의 지형 구조를 100% 매핑하고 한강 라인을 디자인적으로 고증한 통합 시세 맵입니다.")
+            # [수정] 가장 최근 데이터의 월을 가져와 'YY년 MM월' 형태로 텍스트 생성
+            latest_month_str = df['월_날짜객체'].max().strftime('%y년 %m월')
+            
+            # 우측 상단에 기준월 텍스트를 배치하기 위한 레이아웃 분할
+            head_c1, head_c2 = st.columns([7, 3])
+            with head_c1:
+                st.subheader("🗺️ 서울 25개 자치구 랜드마크 시세판")
+            with head_c2:
+                st.markdown(f"<div style='text-align: right; padding-top: 15px; font-size: 11pt; font-weight: bold; color: #3b82f6;'>💡 {latest_month_str} 평균값</div>", unsafe_allow_html=True)
+            
+            st.caption("가장 최근 실거래가 있었던 월의 '평균 금액'을 나타내며, 한강 라인을 고증한 서울 전용 맵입니다.")
 
-            # 서울 25개구 전용 그리드 레이아웃
             map_grid = [
                 [None, None, "도봉구", None, None],
                 [None, "강북구", "노원구", None, None],
                 ["은평구", "성북구", "종로구", "동대문구", "중랑구"],
                 ["서대문구", "중구", "성동구", "광진구", "강동구"],
-                ["한강", "한강", "한강", "한강", "한강"], 
+                ["한강_SPAN"], # 한강 통맵 플래그
                 ["강서구", "마포구", "용산구", "강남구", "송파구"],
                 [None, "양천구", "동작구", "서초구", None],
                 [None, "구로구", "영등포구", "관악구", None],
@@ -191,32 +204,41 @@ if not df.empty:
             ]
 
             current_prices = {}
-            for area_name, match_key in landmark_match_names.items():
-                sub_data = df[df['아파트명'].str.contains(match_key[:5], case=False, na=False)]
+            for area_name, search_k in search_keywords.items():
+                sub_data = df[df['단지선택명'].str.contains(search_k, case=False, na=False)]
                 if not sub_data.empty:
                     latest_m = sub_data['월_날짜객체'].max()
-                    price = sub_data[sub_data['월_날짜객체'] == latest_m]['거래금액(숫자)'].mean()
-                    current_prices[area_name] = {"price": f"{int(price):,}만", "name": match_key[:6]+"..", "active": True}
+                    price_mean = sub_data[sub_data['월_날짜객체'] == latest_m]['거래금액(숫자)'].mean()
+                    price_eok = price_mean / 10000 
+                    
+                    current_prices[area_name] = {
+                        "price": f"{price_eok:.1f}억", 
+                        "name": display_names[area_name], 
+                        "active": True
+                    }
 
-            html_map = "<div style='display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; background-color: #f1f5f9; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0;'>"
+            html_map = "<div style='display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; background-color: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0;'>"
             
             for row in map_grid:
+                if row == ["한강_SPAN"]:
+                    html_map += "<div style='grid-column: 1 / -1; height: 38px; background: linear-gradient(90deg, #60a5fa, #2563eb, #60a5fa); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 10pt; font-weight: bold; letter-spacing: 12px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);'>HAN RIVER</div>"
+                    continue
+                
                 for loc in row:
                     if loc is None:
-                        html_map += "<div style='height: 75px;'></div>"
-                    elif loc == "한강":
-                        html_map += "<div style='height: 40px; background: linear-gradient(90deg, #3b82f6, #60a5fa, #3b82f6); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: white; font-size: 8pt; font-weight: bold; letter-spacing: 5px; opacity: 0.8;'>HAN RIVER</div>"
+                        html_map += "<div style='height: 85px;'></div>"
                     else:
                         data = current_prices.get(loc, {"price": "-", "name": "미수집", "active": False})
-                        bg = "background-color: white; border: 1px solid #cbd5e1; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);" if data['active'] else "background-color: #f8fafc; border: 1px solid #e2e8f0; opacity: 0.5;"
-                        text_c = "#1e3a8a" if data['active'] else "#94a3b8"
-                        text_weight = "font-weight: bold;" if data['active'] else "font-weight: normal;"
-                        t_bg = "background-color: #3b82f6; color: white;" if data['active'] else "background-color: #e2e8f0; color: #94a3b8;"
                         
-                        html_map += f"<div style='{bg} border-radius: 6px; height: 75px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center;'>"
-                        html_map += f"<div style='{t_bg} font-size: 8pt; font-weight: bold; padding: 3px 0;'>{loc}</div>"
-                        html_map += f"<div style='font-size: 7.5pt; color: #64748b; padding: 0 2px;'>{data['name']}</div>"
-                        html_map += f"<div style='font-size: 10.5pt; {text_weight} color: {text_c}; padding-bottom: 4px;'>{data['price']}</div>"
+                        bg = "background-color: white; border: 1px solid #cbd5e1; box-shadow: 1px 2px 4px rgba(0,0,0,0.08);" if data['active'] else "background-color: #f1f5f9; border: 1px solid #e2e8f0; opacity: 0.5;"
+                        text_c = "#1e3a8a" if data['active'] else "#94a3b8"
+                        text_weight = "font-weight: 800;" if data['active'] else "font-weight: normal;"
+                        t_bg = "background-color: #facc15; color: #1e293b;" if data['active'] else "background-color: #e2e8f0; color: #94a3b8;"
+                        
+                        html_map += f"<div style='{bg} border-radius: 6px; height: 85px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center;'>"
+                        html_map += f"<div style='{t_bg} font-size: 8.5pt; font-weight: bold; padding: 4px 0;'>{loc}</div>"
+                        html_map += f"<div style='font-size: 7pt; color: #475569; padding: 2px 4px; line-height: 1.15; word-break: keep-all; flex-grow: 1; display: flex; align-items: center; justify-content: center;'>{data['name']}</div>"
+                        html_map += f"<div style='font-size: 13pt; {text_weight} color: {text_c}; padding-bottom: 4px;'>{data['price']}</div>"
                         html_map += "</div>"
             
             html_map += "</div>"
@@ -229,11 +251,10 @@ if not df.empty:
             
             fig_idx = go.Figure()
             fig_idx.add_trace(go.Scatter(x=landmark_stats['월_날짜객체'], y=landmark_stats['거래금액(숫자)'], mode='lines+markers', line=dict(color='#3b82f6', width=4), marker=dict(size=8, color='white', line=dict(width=2, color='#3b82f6')), name="서울 대장주 평균"))
-            fig_idx.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=420, paper_bgcolor='white', plot_bgcolor='white', hovermode='x unified')
+            fig_idx.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=460, paper_bgcolor='white', plot_bgcolor='white', hovermode='x unified')
             fig_idx.update_xaxes(type='date', tickformat="%y년 %m월", dtick="M3", showgrid=True, gridcolor='#f1f5f9')
             fig_idx.update_yaxes(showgrid=True, gridcolor='#f1f5f9')
             st.plotly_chart(fig_idx, use_container_width=True)
-            st.success("✅ **서울 25개 전역 데이터 완벽 동기화:** 영등포(당산), 중구, 마포, 강동, 양천, 구로, 성동구 매칭 완료.")
 
     # ==================== TAB 1: 단일 단지 시황 분석 ====================
     with main_tab1:
@@ -251,7 +272,6 @@ if not df.empty:
                         st.session_state['selected_gu'] = gu
                         st.rerun()
 
-        # 브리핑 피드 센터
         st.markdown("### 🔔 실시간 관심 지역 시황 브리핑 센터")
         latest_data_date = df['거래일자'].max()
         seven_days_ago = latest_data_date - timedelta(days=7)
@@ -277,7 +297,7 @@ if not df.empty:
         else:
             briefing_messages.append("⚪ **최근 7일간 새로 접수된 관심지역 실거래 내역이 없습니다.**")
 
-        briefing_html = "<div style='background-color:#f8fafc; border-left:5px solid #3b82f6; padding:12px; border-radius:4px; margin-bottom:15px;'>"
+        briefing_html = "<div style='background-color:#f8fafc; border-left:5px solid #facc15; padding:12px; border-radius:4px; margin-bottom:15px;'>"
         for msg in briefing_messages[:4]: 
             briefing_html += f"<p style='margin: 0 0 6px 0; font-size:11pt; color:#334155;'>{msg}</p>"
         briefing_html += "</div>"
@@ -303,7 +323,7 @@ if not df.empty:
                 st.markdown(f"**정보:** {info['세대수']} | {info['준공']} 준공 | 용적률 {info['용적률']} | **구조:** <span style='color:#1e3a8a; font-weight:bold;'>{info['구조']}</span>", unsafe_allow_html=True)
                 st.markdown("---")
                 
-                monthly_stats = final_df.groupby('월_날짜객체').agg(월텍스트=('월_한글텍text' if '월_한글텍text' in final_df.columns else '월_한글텍스트', 'first'), 평균가=('거래금액(숫자)', 'mean'), 거래량=('거래금액(숫자)', 'count')).reset_index()
+                monthly_stats = final_df.groupby('월_날짜객체').agg(월텍스트=('월_한글텍스트' if '월_한글텍스트' in final_df.columns else '월_한글텍스트', 'first'), 평균가=('거래금액(숫자)', 'mean'), 거래량=('거래금액(숫자)', 'count')).reset_index()
                 monthly_stats['평균가'] = monthly_stats['평균가'].round(0).astype(int)
                 max_idx = final_df['거래금액(숫자)'].idxmax()
                 min_idx = final_df['거래금액(숫자)'].idxmin()
@@ -318,7 +338,7 @@ if not df.empty:
                     st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>고점 대비 하락률</p><h3 style='margin:4px 0; color:{'#ef4444' if drop_rate >= 0 else '#3b82f6'}; font-size:16pt;'>{drop_rate:.1f}%</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>최고가 대비 변동폭</p></div>", unsafe_allow_html=True)
                 with card_cols[1]:
                     st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최고가</p><h3 style='margin:4px 0; color:#ef4444; font-size:16pt;'>{max_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[max_idx, '거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#3b82f6; font-size:16pt;'>{min_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[min_idx, '거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최저가</p><h3 style='margin:4px 0; color:#3b82f6; font-size:16pt;'>{min_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[min_idx, '거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
                 
                 st.write("📈 시세 추이 및 거래량")
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
