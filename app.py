@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_8():
+def load_data_v6_9():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -34,7 +34,7 @@ def load_data_v6_8():
         st.error(f"데이터 로드 오류: {e}")
         return pd.DataFrame()
 
-# 법정동 기반 자치구 매핑 (서울/인천/경기 통합 확장)
+# 법정동 기반 자치구 매핑 (수도권 전역 레이아웃 연동형)
 def get_gu_name(dong_name):
     dong = str(dong_name).strip()
     if dong in ['중화동', '상봉동', '면목동', '신내동', '망우동', '묵동']: return '중랑구'
@@ -49,7 +49,7 @@ def get_gu_name(dong_name):
     elif dong in ['대치동', '압구정동', '삼성동', '개포동']: return '강남구'
     elif dong in ['잠실동', '신천동', '문정동', '가락동']: return '송파구'
     elif dong in ['이촌동', '서빙고동', '한남동']: return '용산구'
-    elif dong in ['상계동', '중계동', '하계동', '공릉동']: return '노원구'
+    elif dong in ['상계동', '중계동', '하계동', '공릉동', '월계동']: return '노원구'
     elif dong in ['봉천동', '신림동']: return '관악구'
     elif dong in ['마곡동', '가양동']: return '강서구'
     elif dong in ['홍파동', '무악동']: return '종로구'
@@ -62,16 +62,12 @@ def get_gu_name(dong_name):
     elif dong in ['미아동']: return '강북구'
     elif dong in ['독산동']: return '금천구'
     elif dong in ['창동']: return '도봉구'
-    # 경기도/인천 데이터 유입 대비 매핑 뼈대 구축
-    elif dong in ['월계동']: return '노원구'
     return '기타/미분류'
 
-# 메타 데이터 가동
 def get_apt_info(apt_name, pyung=None):
-    info = {"세대수": "-", "준공": "-", "용적률": "-", "구조": "-"}
-    return info
+    return {"세대수": "-", "준공": "-", "용적률": "-", "구조": "-"}
 
-df = load_data_v6_8()
+df = load_data_v6_9()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'] + " " + df['아파트명']
@@ -83,7 +79,7 @@ if not df.empty:
 
     max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
 
-    # 수도권 전역 랜드마크 마스터 맵 데이터 사전화
+    # 수도권 전역 랜드마크 마스터 맵 정의
     landmark_dict = {
         "파주": "파주", "일산서구": "일산서구", "일산동구": "일산동구", "덕양구": "덕양구", "의정부": "의정부",
         "김포": "김포", "은평구": "은평구", "강북구": "강북구", "도봉구": "도봉구", "남양주": "남양주",
@@ -96,29 +92,26 @@ if not df.empty:
         "단원구": "단원구", "상록구": "상록구", "화성(동탄)": "화성(동탄)", "권선구": "권선구", "팔달구": "팔달구", "영통구(광교)": "영통구(광교)", "오산": "오산", "평택": "평택", "안성": "안성"
     }
     
-    # 실제 수집 데이터 내 아파트 매칭 키워드 연동
     landmark_match_names = {
         "중랑구": "사가정센트럴아이파크", "강남구": "래미안대치팰리스", "서초구": "아크로리버파크", "송파구": "리센츠",
         "용산구": "한가람", "동작구": "아크로리버하임", "종로구": "경희궁자이", "영등포구": "당산센트럴아이파크",
         "중구": "서울역센트럴자이", "광진구": "광장힐스테이트", "마포구": "마포프레스티지자이", "강동구": "올림픽파크포레온",
         "성동구": "래미안옥수리버젠", "양천구": "목동힐스테이트", "강서구": "마곡엠밸리7단지", "서대문구": "e편한세상신촌",
         "성북구": "래미안길음센터피스", "동대문구": "SKY-L65", "관악구": "e편한세상서울대입구", "노원구": "청구3",
-        "구로구": "신도림4차", "은평구": "녹번역e편한세상캐슬", "강북구": "북서울자이폴라리스", "금천구": "롯데캐슬골드파크3차",
-        "도봉구": "북한산아이파크"
+        "구로구": "신도림4차", "은평구": "녹번역e편한세상캐슬", "강북구": "북서울자이폴라RIS" if "북서울자이폴라" in df['아파트명'].values else "북서울자이폴라리스", 
+        "금천구": "롯데캐슬골드파크3차", "도봉구": "북한산아이파크"
     }
 
-    # 종합 화면 구성
     main_tab0, main_tab1, main_tab2 = st.tabs(["👑 수도권 랜드마크 지도 & 지수", "📊 단일 단지 시황 분석", "⚖️ 다중 단지 비교 평가"])
 
-    # ==================== TAB 0: 이미지 고증 수도권 대형 그리드 지도 ====================
+    # ==================== TAB 0: 수도권 전체 그리드 지도 ====================
     with main_tab0:
         col_map, col_chart = st.columns([1.3, 1.0])
 
         with col_map:
-            st.subheader("🗺️ 수도권 랜드마크 실거래 시세판 (지도 고증형)")
-            st.caption("제공해주신 수도권 바둑판 지도의 행렬 구조(9x11)를 완벽하게 프로그래밍화한 정밀 시세 맵입니다.")
+            st.subheader("🗺️ 수도권 랜드마크 실거래 시세판")
+            st.caption("바둑판 도면 지형 구조를 100% 매핑한 거시 분석용 대시보드 화면입니다.")
 
-            # 이미지 기반 9행 11열 격자 레이아웃 마스터 배열 선언
             map_grid = [
                 [None, None, "파주", None, None, None, None, "강북구", "도봉구", "의정부", None],
                 [None, "일산서구", "일산동구", "덕양구", None, None, None, "성북구", "노원구", None, None],
@@ -132,23 +125,20 @@ if not df.empty:
                 [None, None, "단원구", "상록구", "화성(동탄)", "권선구", "팔달구", "영통구(광교)", "오산", "평택", "안성"]
             ]
 
-            # 각 지역구별 최신 실거래 평균가 매칭 연산
             current_prices = {}
             for area_name, match_key in landmark_match_names.items():
-                sub_data = df[df['아파트명'].str.contains(match_key, case=False, na=False)]
+                sub_data = df[df['아파트명'].str.contains(match_key[:6], case=False, na=False)]
                 if not sub_data.empty:
                     current_prices[area_name] = {
-                        "price": f"{int(sub_data.iloc[-1]['거래금액(숫자)']):,}",
-                        "name": match_key[:7] + ".." if len(match_key) > 7 else match_key,
+                        "price": f"{int(sub_data.groupby('월_날짜객체')['거래금액(숫자)'].mean().iloc[-1]):,}만",
+                        "name": match_key[:6] + "..",
                         "active": True
                     }
 
-            # HTML & CSS 도면 드로잉 (가로 11칸 반응형 그리드)
             html_map = "<div style='display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; background-color: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; overflow-x: auto;'>"
             
             for row_idx, row in enumerate(map_grid):
                 for col_idx, loc in enumerate(row):
-                    # 한강 및 동선 바인딩 스타일링 (이미지 속 파란색 가로 바 고증)
                     is_river = False
                     if row_idx == 2 and col_idx in [1, 2, 3]: is_river = True
                     elif row_idx == 3 and col_idx in [1, 3]: is_river = True
@@ -156,23 +146,23 @@ if not df.empty:
                     
                     if loc is None:
                         if is_river:
-                            html_map += "<div style='height: 68px; background-color: #2563eb; border-radius: 2px;'></div>"
+                            html_map += "<div style='height: 68px; background-color: #2563eb; border-radius: 2px; opacity: 0.85;'></div>"
                         else:
                             html_map += "<div style='height: 68px;'></div>"
                     else:
-                        # 데이터 매칭 상태에 따른 컴포넌트 렌더링 분기
                         data = current_prices.get(loc, {"price": "-", "name": "미수집", "active": False})
                         
-                        bg_style = "background-color: white; border: 1px solid #cbd5e1; box-shadow: 1px 1px 2px rgba(0,0,0,0.05);" if data['active'] else "background-color: #f1f5f9; border: 1px solid #e2e8f0; opacity: 0.5;"
-                        text_color = "#1e3a8a" if data['active'] else #94a3b8
-                        title_bg = "background-color: #facc15; color: #1e293b;" if "구" in loc and data['active'] else "background-color: #e2e8f0; color: #475569;"
-                        if not data['active']: title_bg = "background-color: #e2e8f0; color: #94a3b8;"
+                        bg_style = "background-color: white; border: 1px solid #cbd5e1; box-shadow: 1px 1px 2px rgba(0,0,0,0.05);" if data['active'] else "background-color: #f1f5f9; border: 1px solid #e2e8f0; opacity: 0.45;"
+                        # [오류 해결] 헥사코드 문자열 앞뒤에 정확하게 따옴표를 봉인하여 구문 에러를 원천 복구했습니다.
+                        text_color = "#1e3a8a" if data['active'] else "#94a3b8"
+                        text_weight = "font-weight: bold;" if data['active'] else "font-weight: normal;"
+                        title_bg = "background-color: #facc15; color: #1e293b;" if data['active'] else "background-color: #e2e8f0; color: #94a3b8;"
                         
                         html_map += f"""
                         <div style='{bg_style} border-radius: 4px; height: 68px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center;'>
                             <div style='{title_bg} font-size: 7.5pt; font-weight: bold; padding: 2px 0; white-space: nowrap;'>{loc}</div>
                             <div style='font-size: 7pt; color: #64748b; padding: 0 1px; white-space: nowrap; overflow: hidden;'>{data['name']}</div>
-                            <div style='font-size: 9.5pt; font-weight: bold; color: {text_color}; padding-bottom: 3px;'>{data['price']}</div>
+                            <div style='font-size: 9.5pt; {text_weight} color: {text_color}; padding-bottom: 3px;'>{data['price']}</div>
                         </div>
                         """
             html_map += "</div>"
@@ -180,6 +170,7 @@ if not df.empty:
 
         with col_chart:
             st.subheader("📈 서울 랜드마크 종합 지수 추이")
+            df['is_landmark'] = df['단지선택명'].apply(lambda x: any(match_k in x for match_k in landmark_match_names.values()))
             landmark_df = df[df['is_landmark'] == True].copy()
             landmark_stats = landmark_df.groupby('월_날짜객체').agg({'거래금액(숫자)': 'mean'}).reset_index()
             
@@ -197,9 +188,7 @@ if not df.empty:
             fig_idx.update_xaxes(type='date', tickformat="%y년 %m월", dtick="M3", showgrid=True, gridcolor='#f1f5f9')
             fig_idx.update_yaxes(showgrid=True, gridcolor='#f1f5f9')
             st.plotly_chart(fig_idx, use_container_width=True)
-            
-            # 수집 대상 알림창
-            st.info("💡 **시세 맵 레이더 가이드:** 현재 활성화되어 수집 중인 서울 25개 자치구 대장주는 밝은 색으로 표출됩니다. 향후 `apt_tracker.py`에 경기/인천(과천, 분당 등) 단지 키워드를 추가 입력해 돌리시면, 지도상의 회색 미수집 칸들이 실시간으로 밝게 켜지며 통합 시세판이 채워집니다.")
+            st.info("💡 경기/인천의 대표 대장 단지 실거래 데이터를 파이썬 수집기에 연이어 추가해 주시면, 지도의 흐릿한 미수집 구역들이 연동되어 실시간으로 선명하게 켜집니다.")
 
     # ==================== TAB 1: 단일 단지 시황 분석 ====================
     with main_tab1:
@@ -259,7 +248,6 @@ if not df.empty:
             final_df = filtered_df[filtered_df['평형'] == selected_pyung].copy()
             
             if not final_df.empty:
-                info = get_apt_info(selected_apt, selected_pyung)
                 st.subheader(f"📍 {selected_apt} ({selected_pyung}㎡)")
                 st.markdown(f"---")
                 
