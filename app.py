@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_4():
+def load_data_v6_5():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -34,20 +34,36 @@ def load_data_v6_4():
         st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
         return pd.DataFrame()
 
-# 아파트 메타 정보
-def get_apt_info(apt_name):
+# === 아파트 메타 정보 및 구조 라이브러리 고도화 (평형별 구조 반환) ===
+def get_apt_info(apt_name, pyung=None):
+    info = {"세대수": "- ", "준공": "-", "용적률": "-", "구조": "-"}
+    
     if "중화동" in apt_name and "한신" in apt_name:
-        return {"세대수": "1,544세대", "준공": "1997.10", "용적률": "376%"}
+        info.update({"세대수": "1,544세대", "준공": "1997.10 (29년차)", "용적률": "376%"})
+        if pyung:
+            info["구조"] = "방2 / 화1" if pyung <= 60 else "방3 / 화2"
+            
     elif "상월곡동" in apt_name and "동아에코빌" in apt_name:
-        return {"세대수": "1,253세대", "준공": "2003.06", "용적률": "281%"}
+        info.update({"세대수": "1,253세대", "준공": "2003.06 (23년차)", "용적률": "281%"})
+        if pyung:
+            info["구조"] = "방3 / 화1" if pyung <= 60 else "방3 / 화2"
+            
     elif "이문동" in apt_name and "쌍용" in apt_name:
-        return {"세대수": "1,318세대", "준공": "2000.11", "용적률": "343%"}
+        info.update({"세대수": "1,318세대", "준공": "2000.11 (26년차)", "용적률": "343%"})
+        if pyung:
+            info["구조"] = "방3 / 화1" if pyung <= 60 else "방3 / 화2"
+            
     elif "이문동" in apt_name and "현대" in apt_name:
-        return {"세대수": "483세대", "준공": "2000.09", "용적률": "319%"}
+        info.update({"세대수": "483세대", "준공": "2000.09 (26년차)", "용적률": "319%"})
+        if pyung:
+            info["구조"] = "방2 / 화1" if pyung <= 60 else "방3 / 화2"
+            
     elif "상봉동" in apt_name and "더샵" in apt_name:
-        return {"세대수": "497세대", "준공": "2013.11", "용적률": "599%"}
-    else:
-        return {"세대수": "- ", "준공": "-", "용적률": "-"}
+        info.update({"세대수": "497세대", "준공": "2013.11 (13년차)", "용적률": "599%"})
+        if pyung:
+            info["구조"] = "방3 / 화2" if pyung >= 84 else "방2 / 화1"
+            
+    return info
 
 # 법정동 기반 자치구 자동 매핑 사전
 def get_gu_name(dong_name):
@@ -65,7 +81,7 @@ def get_gu_name(dong_name):
     elif dong_name in ['성수동', '옥수동', '금호동', '행당동']: return '성동구'
     else: return '기타/미분류'
 
-df = load_data_v6_4()
+df = load_data_v6_5()
 
 if not df.empty:
     # 데이터 기본 전처리
@@ -76,11 +92,10 @@ if not df.empty:
     df['월_날짜객체'] = df['거래일자'].dt.to_period('M').dt.to_timestamp()
     df['자치구'] = df['법정동'].apply(get_gu_name)
 
-    # 역대 최고가/최저가 계산용 전역 딕셔너리 구축
     max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
 
     st.title("🏢 강석의 아파트 시세트래킹 포털")
-    st.caption("국토부 API 연동 실시간 대시보드 v6.4 (네이버 부동산 스타일 컴팩트 카드 패치 완료)")
+    st.caption("국토부 API 연동 실시간 대시보드 v6.5 (연식·구조·지역구 다중 비교 테이블 탑재)")
 
     # ==================== 상단 자치구 퀵 필터 시스템 ====================
     if 'selected_gu' not in st.session_state:
@@ -137,8 +152,6 @@ if not df.empty:
     briefing_html += "</div>"
     st.markdown(briefing_html, unsafe_allow_html=True)
 
-    # ----------------------------------------------------------------------------------
-
     if st.session_state['selected_gu'] == '전체구':
         gu_filtered_df = df.copy()
     else:
@@ -162,9 +175,10 @@ if not df.empty:
             final_df = filtered_df[filtered_df['평형'] == selected_pyung].copy()
             
             if not final_df.empty:
-                info = get_apt_info(selected_apt)
+                # [수정] 평형 정보를 함께 넘겨주어 동적 구조 파악 가능하게 함
+                info = get_apt_info(selected_apt, selected_pyung)
                 st.subheader(f"📍 {selected_apt} ({selected_pyung}㎡)")
-                st.markdown(f"**정보:** {info['세대수']} | {info['준공']} 준공 | 용적률 {info['용적률']}")
+                st.markdown(f"**정보:** {info['세대수']} | {info['준공']} 준공 | 용적률 {info['용적률']} | **구조:** <span style='color:#1e3a8a; font-weight:bold;'>{info['구조']}</span>", unsafe_allow_html=True)
                 st.markdown("---")
                 
                 monthly_stats = final_df.groupby('월_날짜객체').agg(
@@ -182,10 +196,7 @@ if not df.empty:
                 min_price = final_df.loc[min_idx, '거래금액(숫자)']
                 drop_rate = ((recent_price - max_price) / max_price) * 100
                 
-                # === [아이디어 3] 네이버 부동산 스타일 컴팩트 카드 레이아웃 패치 ===
-                # 기존 st.metric을 모두 제거하고, 모바일 세로형 가독성을 극대화한 HTML/CSS 카드로 대체합니다.
                 card_cols = st.columns(2)
-                
                 with card_cols[0]:
                     st.markdown(f"""
                         <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 8px; text-align: center;'>
@@ -194,7 +205,6 @@ if not df.empty:
                             <p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.iloc[-1]['거래일자'].strftime('%Y-%m-%d')}</p>
                         </div>
                     """, unsafe_allow_html=True)
-                    
                     st.markdown(f"""
                         <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 8px; text-align: center;'>
                             <p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>고점 대비 하락률</p>
@@ -202,7 +212,6 @@ if not df.empty:
                             <p style='margin:0; color:#94a3b8; font-size:9pt;'>최고가 대비 변동폭</p>
                         </div>
                     """, unsafe_allow_html=True)
-                    
                 with card_cols[1]:
                     st.markdown(f"""
                         <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 8px; text-align: center;'>
@@ -211,7 +220,6 @@ if not df.empty:
                             <p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[max_idx, '거래일자'].strftime('%Y-%m-%d')}</p>
                         </div>
                     """, unsafe_allow_html=True)
-                    
                     st.markdown(f"""
                         <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 8px; text-align: center;'>
                             <p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최저가</p>
@@ -220,48 +228,18 @@ if not df.empty:
                         </div>
                     """, unsafe_allow_html=True)
                 
-                st.markdown("<br>", unsafe_allow_html=True) # 카드와 그래프 사이 미세 간격 조정
-                
-                # ----------------------------------------------------------------------
+                st.markdown("<br>", unsafe_allow_html=True)
                 
                 st.write("📈 시세 추이 및 거래량")
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
+                fig.add_trace(go.Bar(x=monthly_stats['월텍스트'], y=monthly_stats['거래량'], name='월 거래량', marker_color='rgba(200, 220, 240, 0.6)'), secondary_y=True)
+                fig.add_trace(go.Scatter(x=final_df['월_한글텍스트'], y=final_df['거래금액(숫자)'], mode='markers', name='개별 실거래', marker=dict(size=7, color='rgba(135, 206, 250, 0.8)'), hovertemplate='금액: %{y}만원'), secondary_y=False)
+                fig.add_trace(go.Scatter(x=monthly_stats['월텍스트'], y=monthly_stats['평균가'], mode='lines+markers', name='월 평균가', line=dict(color='#1e3a8a', width=3)), secondary_y=False)
                 
-                fig.add_trace(go.Bar(
-                    x=monthly_stats['월텍스트'], y=monthly_stats['거래량'], 
-                    name='월 거래량', marker_color='rgba(200, 220, 240, 0.6)'
-                ), secondary_y=True)
+                fig.add_annotation(x=final_df.loc[max_idx, '월_한글텍스트'], y=final_df.loc[max_idx, '거래금액(숫자)'], text="최고", showarrow=True, arrowhead=1, ax=0, ay=-30, bgcolor="#ef4444", font=dict(color="white", size=10))
+                fig.add_annotation(x=final_df.loc[min_idx, '월_한글텍스트'], y=final_df.loc[min_idx, '거래금액(숫자)'], text="최저", showarrow=True, arrowhead=1, ax=0, ay=30, bgcolor="#3b82f6", font=dict(color="white", size=10))
                 
-                fig.add_trace(go.Scatter(
-                    x=final_df['월_한글텍스트'], y=final_df['거래금액(숫자)'], 
-                    mode='markers', name='개별 실거래',
-                    marker=dict(size=7, color='rgba(135, 206, 250, 0.8)'),
-                    hovertemplate='금액: %{y}만원'
-                ), secondary_y=False)
-                
-                fig.add_trace(go.Scatter(
-                    x=monthly_stats['월텍스트'], y=monthly_stats['평균가'], 
-                    mode='lines+markers', name='월 평균가',
-                    line=dict(color='#1e3a8a', width=3)
-                ), secondary_y=False)
-                
-                fig.add_annotation(
-                    x=final_df.loc[max_idx, '월_한글텍스트'], y=final_df.loc[max_idx, '거래금액(숫자)'],
-                    text="최고", showarrow=True, arrowhead=1, ax=0, ay=-30,
-                    bgcolor="#ef4444", font=dict(color="white", size=10)
-                )
-                fig.add_annotation(
-                    x=final_df.loc[min_idx, '월_한글텍스트'], y=final_df.loc[min_idx, '거래금액(숫자)'],
-                    text="최저", showarrow=True, arrowhead=1, ax=0, ay=30,
-                    bgcolor="#3b82f6", font=dict(color="white", size=10)
-                )
-                
-                fig.update_layout(
-                    margin=dict(l=10, r=10, t=30, b=10),
-                    hovermode='x unified',
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    paper_bgcolor='white', plot_bgcolor='white'
-                )
+                fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), hovermode='x unified', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), paper_bgcolor='white', plot_bgcolor='white')
                 fig.update_xaxes(categoryorder='category ascending', showgrid=True, gridcolor='#f1f5f9')
                 fig.update_yaxes(title_text="거래금액(만)", secondary_y=False, showgrid=True, gridcolor='#f1f5f9')
                 fig.update_yaxes(title_text="거래량(건)", secondary_y=True, showgrid=False)
@@ -285,7 +263,7 @@ if not df.empty:
         else:
             st.warning(f"선택하신 지역구에 축적된 데이터가 아직 없습니다.")
 
-    # ==================== TAB 2: 다중 단지 비교 평가 ====================
+    # ==================== TAB 2: 다중 단지 비교 평가 (연식, 구조, 지역구 추가 지표 개편) ====================
     with tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
         st.markdown("비교할 단지들을 선택한 후, 각 단지별로 비교 대상 평형을 각각 지정하여 정밀하게 비교합니다.")
@@ -338,20 +316,40 @@ if not df.empty:
                 fig_comp.update_yaxes(title_text="월평균 거래금액(만)", showgrid=True, gridcolor='#f1f5f9')
                 st.plotly_chart(fig_comp, use_container_width=True)
                 
+                # === [구조 개편] 평형 매칭 종합 요약 지표 테이블에 자치구/연식/구조 칼럼 완벽 융합 ===
                 st.write("📊 평형 매칭 종합 요약 지표")
                 summary_records = []
                 for label in sorted(comp_df['비교단지명'].unique()):
                     unit_df = comp_df[comp_df['비교단지명'] == label]
                     if not unit_df.empty:
+                        # 정보 추출용 첫 행 매칭
+                        sample_row = unit_df.iloc[0]
+                        orig_name = sample_row['단지선택명']
+                        orig_pyung = sample_row['평형']
+                        gu_name = sample_row['자치구']
+                        
+                        # 메타정보 딕셔너리 동적 호출
+                        apt_meta = get_apt_info(orig_name, orig_pyung)
+                        
                         recent = unit_df.iloc[-1]['거래금액(숫자)']
                         mx = unit_df['거래금액(숫자)'].max()
                         mn = unit_df['거래금액(숫자)'].min()
                         dr = ((recent - mx) / mx) * 100
+                        
                         summary_records.append({
-                            "비교 대상 단지 (평형)": label, "최근거래가(만)": recent, "역대최고가(만)": mx, "역대최저가(만)": mn, "고점대비하락률": f"{dr:.1f}%"
+                            "지역구": gu_name,
+                            "비교 대상 단지 (평형)": label,
+                            "연식 (준공일)": apt_meta['준공'],
+                            "구조 (방/화)": apt_meta['구조'],
+                            "최근거래가(만)": recent,
+                            "역대최고가(만)": mx,
+                            "역대최저가(만)": mn,
+                            "고점대비하락률": f"{dr:.1f}%"
                         })
                 
                 summary_df = pd.DataFrame(summary_records)
+                
+                # 디자인 포맷 보장 및 중앙 정렬 고정
                 styled_summary = summary_df.style.format({
                     '최근거래가(만)': '{:,.0f}', '역대최고가(만)': '{:,.0f}', '역대최저가(만)': '{:,.0f}'
                 }).set_properties(**{'text-align': 'center'})
