@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_17():
+def load_data_v6_18():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -34,7 +34,7 @@ def load_data_v6_17():
         st.error(f"데이터 로드 오류: {e}")
         return pd.DataFrame()
 
-# === 법정동-자치구 정밀 매핑 (공백 및 유령 문자 예방 포함) ===
+# === 법정동 기준 자치구 정밀 분류 (유령 공백/텍스트 이슈 원천 차단) ===
 def get_gu_name(dong_name):
     dong = str(dong_name).strip().replace(" ", "")
     if any(k in dong for k in ['중화', '상봉', '면목', '신내', '망우', '묵']): return '중랑구'
@@ -64,27 +64,20 @@ def get_gu_name(dong_name):
     elif any(k in dong for k in ['독산', '시흥', '가산']): return '금천구'
     return '기타/미분류'
 
-def get_apt_info(apt_name, pyung=None):
-    info = {"세대수": "-", "준공": "-", "용적률": "-", "구조": "-"}
-    return info
-
-df = load_data_v6_17()
+df = load_data_v6_18()
 
 if not df.empty:
-    # 텍스트 비교 표준화 (모든 공백, 특수문자 제거 및 소문자 통일)
-    df['단지선택명'] = df['법정동'] + " " + df['아파트명']
-    df['법정동_클린'] = df['법정동'].astype(str).str.replace(' ', '').str.replace('-', '')
-    df['아파트명_클린'] = df['아파트명'].astype(str).str.replace(' ', '').str.replace('-', '').str.lower()
+    # 데이터 표준화 정제 작업
+    df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
+    df['자치구'] = df['법정동'].apply(get_gu_name)
     df['거래금액(숫자)'] = df['거래금액(만)'].astype(str).str.replace(',', '').astype(int)
     df['평형'] = df['전용면적(㎡)'].apply(lambda x: round(float(x)))
     df['월_날짜객체'] = df['거래일자'].dt.to_period('M').dt.to_timestamp()
     df['월_한글텍스트'] = df['거래일자'].dt.strftime('%y년 %m월')
-    df['자치구'] = df['법정동'].apply(get_gu_name)
 
     max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
 
-    # 데이터 매칭용 와일드카드 2중 토큰 키워드 (동네 키워드, 아파트 키워드)
-    # 구글 시트에 띄어쓰기나 오차가 있어도 무조건 바인딩 성공하도록 설계
+    # 각 자치구별 랜드마크 매칭용 하드코딩 룰 정의 (글자 포함 여부 검사용)
     match_rules = {
         "도봉구": ("창동", "북한산아이파크"),
         "강북구": ("미아", "북서울자이"),
@@ -98,7 +91,7 @@ if not df.empty:
         "마포구": ("염리", "마포프레스티지"),
         "용산구": ("이촌", "한가람"),
         "중구": ("만리", "서울역센트럴"),
-        "성동구": ("옥수", "래미안"),  # 성동구 긴급 해결책 (옥수동 래미안 포함시 무조건 수집)
+        "성동구": ("옥수", "래미안"),
         "광진구": ("광장", "광장힐스테이트"),
         "강동구": ("둔촌", "올림픽파크포레온"),
         "강서구": ("마곡", "마곡엠밸리7"),
@@ -108,7 +101,7 @@ if not df.empty:
         "서초구": ("반포", "아크로리버파크"),
         "강남구": ("대치", "래미안대치팰리스"),
         "송파구": ("잠실", "리센츠"),
-        "구로구": ("신도림", "4차"),    # 구로구 긴급 해결책 (신도림동 4차 포함시 무조건 수집)
+        "구로구": ("신도림", "4차"),
         "금천구": ("독산", "롯데캐슬골드파크3"),
         "관악구": ("봉천", "서울대입구")
     }
@@ -124,29 +117,46 @@ if not df.empty:
     landmark_match_keys = []
     current_prices = {}
     
-    # 강력해진 와일드카드 매칭 루프 가동
-    for gu_name, (dong_k, apt_k) in match_rules.items():
-        cond = df['법정동_클린'].str.contains(dong_k) & df['아파트명_클린'].str.contains(apt_k)
-        sub_data = df[cond]
-        if not sub_data.empty:
-            latest_m = sub_data['월_날짜객체'].max()
-            price_mean = sub_data[sub_data['월_날짜객체'] == latest_m]['거래금액(숫자)'].mean()
-            price_eok = price_mean / 10000 
-            
-            current_prices[gu_name] = {
-                "price": f"{price_eok:.1f}억", 
-                "name": display_names[gu_name], 
+    # [오류 해결] 더욱 직관적이고 강력한 다이렉트 이중 루프 매칭 매커니즘 도입
+    for idx, row in df.iterrows():
+        r_dong = str(row['법정동']).replace(" ", "")
+        r_apt = str(row['아파트명']).replace(" ", "").lower()
+        
+        for gu_name, (dong_k, apt_k) in match_rules.items():
+            if dong_k in r_dong and apt_k.lower() in r_apt:
+                if gu_name not in current_prices:
+                    current_prices[gu_name] = []
+                current_prices[gu_name].append(row)
+                landmark_match_keys.append(row['단지선택명'])
+
+    # 최종 시세 가공
+    processed_prices = {}
+    for gu_name in match_rules.keys():
+        g_list = current_prices.get(gu_name, [])
+        if g_list:
+            g_df = pd.DataFrame(g_list)
+            latest_m = g_df['월_날짜객체'].max()
+            price_mean = g_df[g_df['월_날짜객체'] == latest_m]['거래금액(숫자)'].mean()
+            price_eok = price_mean / 10000
+            processed_prices[gu_name] = {
+                "price": f"{price_eok:.1f}억",
+                "name": display_names[gu_name],
                 "active": True
             }
-            # 전역 지점 판단용 단지 리스트업 백업
-            landmark_match_keys.extend(sub_data['단지선택명'].unique())
+        else:
+            processed_prices[gu_name] = {
+                "price": "-",
+                "name": display_names[gu_name],
+                "active": False
+            }
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    # 대시보드 메인 레이아웃 가동
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.18")
+
     main_tab0, main_tab1, main_tab2 = st.tabs(["👑 서울 랜드마크 지도 & 지수", "📊 단지별 정밀 분석", "⚖️ 단지간 비교 평가"])
 
-    # ==================== TAB 0: 요청 양식 100% 싱크로 고증 지도 ====================
+    # ==================== TAB 0: 요청 사항 완벽 반영 지도 레이아웃 ====================
     with main_tab0:
         latest_month_str = df['월_날짜객체'].max().strftime('%y년 %m월')
         
@@ -156,26 +166,25 @@ if not df.empty:
         with head_c2:
             st.markdown(f"<div style='text-align: right; padding-top: 15px; font-size: 11pt; font-weight: bold; color: #3b82f6;'>💡 {latest_month_str} 평균값</div>", unsafe_allow_html=True)
         
-        st.caption("송부해주신 디자인 시안 도면(가로 8열 x 세로 6열)의 행렬 좌표 및 블루 한강 벨트를 완벽하게 이식한 화면입니다.")
+        st.caption("요청하신 대로 은평구를 마포구 옆칸으로 이동하고, 성북/노원구를 빈칸 없이 동대문/중랑구 바로 위에 밀착시킨 최적화 도면입니다.")
 
-        # [고증 패치] 강석님이 도려 붙여주신 랜드마크 사진.png 도면의 8열 그리드 좌표 배열 완벽 동기화
+        # [고증 패치 v6.18] 은평구 위치 이동 및 성북/노원구 하단 밀착 배치 8열 그리드
         map_grid = [
+            [None, None, None, None, None, None, None, None],
             [None, None, None, None, "강북구", "도봉구", None, None],
-            [None, None, None, None, "성북구", "노원구", None, None],
-            [None, "은평구", None, None, None, None, None, None],
+            [None, None, None, None, "성북구", "노원구", None, None],  # 한 행 밑으로 내려서 동대문/중랑구 위에 밀착
             [None, None, "서대문구", "종로구", "동대문구", "중랑구", None, None],
-            [None, None, "마포구", "용산구", "중구", "성동구", "광진구", None],
-            ["한강_SPAN"], # 강서구와 양천구 사이를 부드럽게 뚫고 가로지르는 리얼 한강 통합 라인
+            [None, "은평구", "마포구", "용산구", "중구", "성동구", "광진구", None],  # 은평구를 마포구 왼쪽 옆자리로 배치
+            ["한강_SPAN"],
             ["강서구", "양천구", "영등포구", "동작구", "서초구", "강남구", "송파구", "강동구"],
             [None, "구로구", "금천구", "관악구", None, None, None, None]
         ]
 
-        # 가로 8열(repeat(8, 1fr)) 광역 격자판 렌더링 시작
+        # 가로 8열 격자 시세판 생성
         html_map = "<div style='display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; background-color: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0;'>"
         
         for row in map_grid:
             if row == ["한강_SPAN"]:
-                # 8열을 꽉 채워서 완벽하게 이어지는 강줄기 구현 (grid-column: 1 / -1)
                 html_map += "<div style='grid-column: 1 / -1; height: 38px; background: linear-gradient(90deg, #60a5fa, #2563eb, #60a5fa); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 10pt; font-weight: bold; letter-spacing: 15px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);'>HAN RIVER</div>"
                 continue
             
@@ -183,7 +192,7 @@ if not df.empty:
                 if loc is None:
                     html_map += "<div style='height: 85px;'></div>"
                 else:
-                    data = current_prices.get(loc, {"price": "-", "name": "미수집", "active": False})
+                    data = processed_prices.get(loc, {"price": "-", "name": "미수집", "active": False})
                     
                     bg = "background-color: white; border: 1px solid #cbd5e1; box-shadow: 1px 2px 4px rgba(0,0,0,0.08);" if data['active'] else "background-color: #f1f5f9; border: 1px solid #e2e8f0; opacity: 0.5;"
                     text_c = "#1e3a8a" if data['active'] else "#94a3b8"
@@ -199,20 +208,19 @@ if not df.empty:
         html_map += "</div>"
         st.markdown(html_map, unsafe_allow_html=True)
 
-        # 차트를 시세판 밑으로 전면 격리 조치 완료
+        # 차트는 하단에 고정 배치
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.subheader("📈 서울 랜드마크 종합 지수 추и")
+        st.subheader("📈 서울 랜드마크 종합 지수 추이")
         
-        if landmark_match_keys:
-            landmark_stats = df[df['is_landmark']].groupby('월_날짜객체').agg({'거래금액(숫자)': 'mean'}).reset_index()
+        landmark_df = df[df['is_landmark'] == True].copy()
+        if not landmark_df.empty:
+            landmark_stats = landmark_df.groupby('월_날짜객체').agg({'거래금액(숫자)': 'mean'}).reset_index()
             fig_idx = go.Figure()
             fig_idx.add_trace(go.Scatter(x=landmark_stats['월_날짜객체'], y=landmark_stats['거래금액(숫자)'], mode='lines+markers', line=dict(color='#3b82f6', width=4), marker=dict(size=8, color='white', line=dict(width=2, color='#3b82f6')), name="서울 대장주 평균"))
             fig_idx.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=400, paper_bgcolor='white', plot_bgcolor='white', hovermode='x unified')
             fig_idx.update_xaxes(type='date', tickformat="%y년 %m월", dtick="M3", showgrid=True, gridcolor='#f1f5f9')
             fig_idx.update_yaxes(showgrid=True, gridcolor='#f1f5f9')
             st.plotly_chart(fig_idx, use_container_width=True)
-        else:
-            st.info("차트 연산을 위한 기반 랜드마크 데이터셋을 파싱하지 못했습니다.")
 
     # ==================== TAB 1: 단일 단지 시황 분석 ====================
     with main_tab1:
@@ -266,7 +274,7 @@ if not df.empty:
                 fig.add_trace(go.Bar(x=monthly_stats['월텍스트'], y=monthly_stats['거래량'], name='월 거래량', marker_color='rgba(200, 220, 240, 0.6)'), secondary_y=True)
                 fig.add_trace(go.Scatter(x=final_df['월_한글텍스트'], y=final_df['거래금액(숫자)'], mode='markers', name='개별 실거래', marker=dict(size=7, color='rgba(135, 206, 250, 0.8)'), hovertemplate='금액: %{y}만원'), secondary_y=False)
                 fig.add_trace(go.Scatter(x=monthly_stats['월텍스트'], y=monthly_stats['평균가'], mode='lines+markers', name='월 평균가', line=dict(color='#1e3a8a', width=3)), secondary_y=False)
-                fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), hovermode='x unified', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), paper_bgcolor='white', plot_bgcolor='white')
+                fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white')
                 st.plotly_chart(fig, use_container_width=True)
 
     # ==================== TAB 2: 다중 단지 비교 평가 ====================
