@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_18():
+def load_data_v6_19():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -34,7 +34,7 @@ def load_data_v6_18():
         st.error(f"데이터 로드 오류: {e}")
         return pd.DataFrame()
 
-# === 법정동 기준 자치구 정밀 분류 (유령 공백/텍스트 이슈 원천 차단) ===
+# === 법정동 기준 자치구 정밀 분류 ===
 def get_gu_name(dong_name):
     dong = str(dong_name).strip().replace(" ", "")
     if any(k in dong for k in ['중화', '상봉', '면목', '신내', '망우', '묵']): return '중랑구'
@@ -64,7 +64,7 @@ def get_gu_name(dong_name):
     elif any(k in dong for k in ['독산', '시흥', '가산']): return '금천구'
     return '기타/미분류'
 
-df = load_data_v6_18()
+df = load_data_v6_19()
 
 if not df.empty:
     # 데이터 표준화 정제 작업
@@ -75,9 +75,7 @@ if not df.empty:
     df['월_날짜객체'] = df['거래일자'].dt.to_period('M').dt.to_timestamp()
     df['월_한글텍스트'] = df['거래일자'].dt.strftime('%y년 %m월')
 
-    max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
-
-    # 각 자치구별 랜드마크 매칭용 하드코딩 룰 정의 (글자 포함 여부 검사용)
+    # 각 자치구별 랜드마크 매칭용 룰 정의
     match_rules = {
         "도봉구": ("창동", "북한산아이파크"),
         "강북구": ("미아", "북서울자이"),
@@ -114,34 +112,32 @@ if not df.empty:
         "구로구": "신도림4차 e편한세상", "금천구": "롯데캐슬골드파크3차", "관악구": "e편한세상서울대입구"
     }
 
+    # 데이터 수집 딕셔너리 초기화
+    collected_data = {gu: [] for gu in match_rules.keys()}
     landmark_match_keys = []
-    current_prices = {}
-    
-    # [오류 해결] 더욱 직관적이고 강력한 다이렉트 이중 루프 매칭 매커니즘 도입
+
+    # 단 한 번의 루프로 매칭 및 수집 완료하여 데이터 꼬임 방지
     for idx, row in df.iterrows():
         r_dong = str(row['법정동']).replace(" ", "")
         r_apt = str(row['아파트명']).replace(" ", "").lower()
         
         for gu_name, (dong_k, apt_k) in match_rules.items():
             if dong_k in r_dong and apt_k.lower() in r_apt:
-                if gu_name not in current_prices:
-                    current_prices[gu_name] = []
-                current_prices[gu_name].append(row)
+                collected_data[gu_name].append(row)
                 landmark_match_keys.append(row['단지선택명'])
 
-    # 최종 시세 가공
+    # 최종 시세판 데이터 바인딩 객체 생성
     processed_prices = {}
-    for gu_name in match_rules.keys():
-        g_list = current_prices.get(gu_name, [])
-        if g_list:
-            g_df = pd.DataFrame(g_list)
+    for gu_name, rows in collected_data.items():
+        if len(rows) > 0:
+            g_df = pd.DataFrame(rows)
             latest_m = g_df['월_날짜객체'].max()
             price_mean = g_df[g_df['월_날짜객체'] == latest_m]['거래금액(숫자)'].mean()
             price_eok = price_mean / 10000
             processed_prices[gu_name] = {
                 "price": f"{price_eok:.1f}억",
                 "name": display_names[gu_name],
-                "active": True
+                "active": True  # 금액 수집이 확인되면 무조건 디자인 활성화 불 켜기
             }
         else:
             processed_prices[gu_name] = {
@@ -152,7 +148,7 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.18")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.19")
 
     main_tab0, main_tab1, main_tab2 = st.tabs(["👑 서울 랜드마크 지도 & 지수", "📊 단지별 정밀 분석", "⚖️ 단지간 비교 평가"])
 
@@ -166,15 +162,13 @@ if not df.empty:
         with head_c2:
             st.markdown(f"<div style='text-align: right; padding-top: 15px; font-size: 11pt; font-weight: bold; color: #3b82f6;'>💡 {latest_month_str} 평균값</div>", unsafe_allow_html=True)
         
-        st.caption("요청하신 대로 은평구를 마포구 옆칸으로 이동하고, 성북/노원구를 빈칸 없이 동대문/중랑구 바로 위에 밀착시킨 최적화 도면입니다.")
-
-        # [고증 패치 v6.18] 은평구 위치 이동 및 성북/노원구 하단 밀착 배치 8열 그리드
+        # 지도 격자 배치 좌표 구조 유지
         map_grid = [
             [None, None, None, None, None, None, None, None],
             [None, None, None, None, "강북구", "도봉구", None, None],
-            [None, None, None, None, "성북구", "노원구", None, None],  # 한 행 밑으로 내려서 동대문/중랑구 위에 밀착
+            [None, None, None, None, "성북구", "노원구", None, None],
             [None, None, "서대문구", "종로구", "동대문구", "중랑구", None, None],
-            [None, "은평구", "마포구", "용산구", "중구", "성동구", "광진구", None],  # 은평구를 마포구 왼쪽 옆자리로 배치
+            [None, "은평구", "마포구", "용산구", "중구", "성동구", "광진구", None],
             ["한강_SPAN"],
             ["강서구", "양천구", "영등포구", "동작구", "서초구", "강남구", "송파구", "강동구"],
             [None, "구로구", "금천구", "관악구", None, None, None, None]
@@ -194,6 +188,7 @@ if not df.empty:
                 else:
                     data = processed_prices.get(loc, {"price": "-", "name": "미수집", "active": False})
                     
+                    # [디자인 패치] 은평, 성동, 구로구 포함 active 상태인 모든 블록 스타일 동일화 적용
                     bg = "background-color: white; border: 1px solid #cbd5e1; box-shadow: 1px 2px 4px rgba(0,0,0,0.08);" if data['active'] else "background-color: #f1f5f9; border: 1px solid #e2e8f0; opacity: 0.5;"
                     text_c = "#1e3a8a" if data['active'] else "#94a3b8"
                     text_weight = "font-weight: 800;" if data['active'] else "font-weight: normal;"
