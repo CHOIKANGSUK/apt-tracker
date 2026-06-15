@@ -16,7 +16,7 @@ st.set_page_config(
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_21():
+def load_data_v6_22():
     try:
         creds_dict = st.secrets["gcp_service_account"]
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -64,7 +64,7 @@ def get_gu_name(dong_name):
     elif any(k in dong for k in ['독산', '시흥', '가산']): return '금천구'
     return '기타/미분류'
 
-# [복구 완결] 누락되었던 전체 아파트 메타 정보 백과사전 원상복구
+# 아파트 메타 정보 백과사전 데이터 보존 락(Lock)
 def get_apt_info(apt_name, pyung=None):
     info = {"세대수": "-", "준공": "-", "용적률": "-", "구조": "-"}
     clean_name = str(apt_name).replace(" ", "").lower()
@@ -103,6 +103,7 @@ def get_apt_info(apt_name, pyung=None):
 df = load_data_v6_21()
 
 if not df.empty:
+    # 기본 전처리
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
     df['자치구'] = df['법정동'].apply(get_gu_name)
     df['거래금액(숫자)'] = df['거래금액(만)'].astype(str).str.replace(',', '').astype(int)
@@ -112,10 +113,11 @@ if not df.empty:
 
     max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
 
+    # 규칙 설정
     match_rules = {
         "도봉구": "북한산아이파크", "강북구": "북서울자이", "노원구": "청구3", "성북구": "래미안길음",
         "은평구": "녹번역", "서대문구": "e편한세상신촌", "종로구": "경희궁자이", "동대문구": "sky",
-        "중랑구": "사가정센트럴", "마포구": "마포프레스티지", "용산구": "한가람", "중구": "서울역센트럴",
+        "중랑구": "사가정센트럴", "마포구": "마포프레스티지", "용산구": "한가람", "중구": "서울역센트真实",
         "성동구": "래미안옥수", "광진구": "광장힐스테이트", "강동구": "올림픽파크포레온", "강서구": "마곡엠밸리7",
         "양천구": "목동힐스테이트", "영등포구": "당산센트럴", "동작구": "아크로리버하임", "서초구": "아크로리버파크",
         "강남구": "래미안대치팰리스", "송파구": "리센츠", "구로구": "신도림4", "금천구": "롯데캐슬골드파크3",
@@ -126,7 +128,7 @@ if not df.empty:
         "도봉구": "북한산 아이파크", "강북구": "북서울자이폴라리스", "노원구": "중계 청구3차", "성북구": "래미안길음센터피스",
         "은평구": "녹번역e편한세상캐슬", "서대문구": "e편한세상신촌", "종로구": "경희궁자이 2단지", "동대문구": "롯데캐슬 SKY-L65", "중랑구": "사가정센트럴아이파크",
         "마포구": "마포프레스티지자이", "용산구": "이촌동 한가람", "중구": "서울역센트럴자이", "성동구": "래미안옥수리버젠", "광진구": "광장힐스테이트", "강동구": "올림픽파크포레온",
-        "강서구": "마곡엠밸리7단지", "양천구": "목동힐스테이트", "영등포구": "당산센트럴아이파크", "동작구": "아크로리버하임", "서초구": "아크로리버파크", "강남구": "래미안대치팰리스", "송파구": "리센츠",
+        "강서구": "마곡엠밸리7단지", "양천구": "목동힐스테이트", "영등포구": "당산센트럴아이파크", "동작구": "아크로리버하임", "서초구": "아크ro리버파크", "강남구": "래미안대치팰리스", "송파구": "리센츠",
         "구로구": "신도림4차 e편한세상", "금천구": "롯데캐슬골드파크3차", "관악구": "e편한세상서울대입구"
     }
 
@@ -140,43 +142,50 @@ if not df.empty:
                 collected_data[gu_name].append(row)
                 landmark_match_keys.append(row['단지선택명'])
 
-    # [핵심 패치 1] 오직 84㎡(전용면적 83~85) 국민평형 데이터만 필터링하여 평균 계산!
-    processed_prices = {}
-    for gu_name, rows in collected_data.items():
-        if len(rows) > 0:
-            g_df = pd.DataFrame(rows)
-            # 84제곱(83~85 구간) 데이터만 추출
-            g_df_84 = g_df[g_df['평형'].between(83, 85)]
-            
-            if not g_df_84.empty:
-                latest_m = g_df_84['월_날짜객체'].max()
-                price_mean = g_df_84[g_df_84['월_날짜객체'] == latest_m]['거래금액(숫자)'].mean()
-                price_eok = price_mean / 10000
-                processed_prices[gu_name] = {"price": f"{price_eok:.1f}억", "name": display_names[gu_name], "active": True}
-            else:
-                # 84제곱 데이터가 아예 없는 경우
-                processed_prices[gu_name] = {"price": "-", "name": display_names[gu_name], "active": False}
-        else:
-            processed_prices[gu_name] = {"price": "-", "name": display_names[gu_name], "active": False}
-
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.21")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.22")
 
     main_tab0, main_tab1, main_tab2 = st.tabs(["👑 서울 랜드마크 지도 & 지수", "📊 단지별 정밀 분석", "⚖️ 단지간 비교 평가"])
 
-    # ==================== TAB 0: 지도 레이아웃 ====================
+    # ==================== TAB 0: 지도 레이아웃 (시계열 월 선택 탑재) ====================
     with main_tab0:
-        latest_month_str = df['월_날짜객체'].max().strftime('%y년 %m월')
+        # 데이터베이스 전체에서 고유 개월 리스트 도출하여 정렬
+        all_available_months = sorted(df['월_날짜객체'].unique())
+        month_options = [pd.to_datetime(m).strftime('%y년 %m월') for m in all_available_months]
         
-        head_c1, head_c2 = st.columns([7, 3])
+        # 상단 구조 재설계
+        head_c1, head_c2 = st.columns([6, 4])
         with head_c1:
-            st.subheader("🗺️ 서울 25개 자치구 고증 시세판")
+            # [요청 1] 타이틀 명칭 변경 완료
+            st.subheader("🗺️ 서울 랜드마크 시세트래킹 지도")
         with head_c2:
-            st.markdown(f"<div style='text-align: right; padding-top: 15px; font-size: 11pt; font-weight: bold; color: #3b82f6;'>💡 {latest_month_str} (84㎡ 기준) 평균</div>", unsafe_allow_html=True)
-        
-        st.caption("각 자치구 대장주의 **'국민평형(84㎡)'** 최신 거래 평균 금액만을 엄격하게 산출한 마스터 맵입니다.")
+            # [요청 2] 매달 자료 연동을 위한 시계열 인터랙티브 슬라이더 바 배치
+            chosen_month_str = st.select_slider("📅 시세 분석 기준월 선택", options=month_options, value=month_options[-1])
+            chosen_month_date = all_available_months[month_options.index(chosen_month_str)]
+            
+        st.caption(f"현재 선택된 시점: **{chosen_month_str}** | 각 자치구 대장주의 **'국민평형(84㎡)'** 월간 평균 실거래 금액 스냅샷입니다.")
 
+        # 슬라이더로 선택된 특정 월 기준 실시간 가격 동적 인덱싱 루프
+        processed_prices = {}
+        for gu_name, rows in collected_data.items():
+            if len(rows) > 0:
+                g_df = pd.DataFrame(rows)
+                g_df_84 = g_df[g_df['평형'].between(83, 85)]
+                
+                # 핵심: 사용자가 슬라이더로 선택한 달의 데이터만 정밀 타겟 필터링
+                g_df_month = g_df_84[g_df_84['월_날짜객체'] == chosen_month_date]
+                
+                if not g_df_month.empty:
+                    price_mean = g_df_month['거래금액(숫자)'].mean()
+                    price_eok = price_mean / 10000
+                    processed_prices[gu_name] = {"price": f"{price_eok:.1f}억", "name": display_names[gu_name], "active": True}
+                else:
+                    processed_prices[gu_name] = {"price": "-", "name": display_names[gu_name], "active": False}
+            else:
+                processed_prices[gu_name] = {"price": "-", "name": display_names[gu_name], "active": False}
+
+        # 8열 그리드 구조 완벽 보존
         map_grid = [
             [None, None, None, None, None, None, None, None],
             [None, None, None, None, "강북구", "도봉구", None, None],
@@ -213,11 +222,12 @@ if not df.empty:
         html_map += "</div>"
         st.markdown(html_map, unsafe_allow_html=True)
 
+        # 차트 고정 배치 유지
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.subheader("📈 서울 랜드마크 84㎡ 종합 지수 추이")
         
         landmark_df = df[df['is_landmark'] == True].copy()
-        landmark_df_84 = landmark_df[landmark_df['평형'].between(83, 85)] # 84제곱만 차트에 반영
+        landmark_df_84 = landmark_df[landmark_df['평형'].between(83, 85)]
         
         if not landmark_df_84.empty:
             landmark_stats = landmark_df_84.groupby('월_날짜객체').agg({'거래금액(숫자)': 'mean'}).reset_index()
@@ -228,7 +238,7 @@ if not df.empty:
             fig_idx.update_yaxes(showgrid=True, gridcolor='#f1f5f9')
             st.plotly_chart(fig_idx, use_container_width=True)
 
-    # ==================== TAB 1: 단일 단지 시황 분석 (삭제 기능 100% 복구 완료) ====================
+    # ==================== TAB 1: 단일 단지 시황 분석 (기존 모든 시각화 및 실거래 표 완전 소생) ====================
     with main_tab1:
         if 'selected_gu' not in st.session_state: st.session_state['selected_gu'] = '중랑구'
         seoul_gus = ["전체구", "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구", "노원구", "도봉구", "동대문구", "동작구", "마포구", "서대문구", "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구", "용산구", "은평구", "종로구", "중구", "중랑구"]
@@ -255,7 +265,6 @@ if not df.empty:
             final_df = filtered_df[filtered_df['평형'] == selected_pyung].copy()
             
             if not final_df.empty:
-                # 아파트 메타 정보 복구 완료
                 info = get_apt_info(selected_apt, selected_pyung)
                 st.subheader(f"📍 {selected_apt} ({selected_pyung}㎡)")
                 st.markdown(f"**정보:** 세대수 {info['세대수']} | 준공 {info['준공']} | 용적률 {info['용적률']} | **구조:** <span style='color:#1e3a8a; font-weight:bold;'>{info['구조']}</span>", unsafe_allow_html=True)
@@ -284,14 +293,14 @@ if not df.empty:
                 fig.add_trace(go.Scatter(x=final_df['월_한글텍스트'], y=final_df['거래금액(숫자)'], mode='markers', name='개별 실거래', marker=dict(size=7, color='rgba(135, 206, 250, 0.8)'), hovertemplate='금액: %{y}만원'), secondary_y=False)
                 fig.add_trace(go.Scatter(x=monthly_stats['월텍스트'], y=monthly_stats['평균가'], mode='lines+markers', name='월 평균가', line=dict(color='#1e3a8a', width=3)), secondary_y=False)
                 
-                # [복구 완결] 최고가 최저가 어노테이션 텍스트 표시 부활
+                # 최고/최저가 그래프 내부 마킹 어노테이션 소생 완료
                 fig.add_annotation(x=final_df.loc[max_idx, '월_한글텍스트'], y=final_df.loc[max_idx, '거래금액(숫자)'], text="최고", showarrow=True, arrowhead=1, ax=0, ay=-30, bgcolor="#ef4444", font=dict(color="white", size=10))
                 fig.add_annotation(x=final_df.loc[min_idx, '월_한글텍스트'], y=final_df.loc[min_idx, '거래금액(숫자)'], text="최저", showarrow=True, arrowhead=1, ax=0, ay=30, bgcolor="#3b82f6", font=dict(color="white", size=10))
                 
                 fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white')
                 st.plotly_chart(fig, use_container_width=True)
 
-                # [복구 완결] 하단 실거래가 표 리스트 부활
+                # 하단 리얼 실거래가 테이블 복구 완료
                 st.write("📋 전체 실거래 내역 리스트")
                 final_df['비고'] = ""
                 final_df.loc[max_idx, '비고'] = "🔴 최고가"
@@ -302,8 +311,12 @@ if not df.empty:
                 display_df.columns = ['거래일자', '층', '거래금액(만)', '비고']
                 styled_df = display_df.style.format({'거래금액(만)': '{:,.0f}'}).set_properties(**{'text-align': 'center'})
                 st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning("선택한 평형의 데이터가 없습니다.")
+        else:
+            st.warning("데이터가 아직 수집되지 않았습니다.")
 
-    # ==================== TAB 2: 다중 단지 비교 평가 (삭제 요약표 100% 복구 완료) ====================
+    # ==================== TAB 2: 다중 단지 비교 평가 (삭제 하단 매칭 요약표 완전 소생) ====================
     with main_tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
         all_apts = sorted(df['단지선택명'].unique())
@@ -338,7 +351,7 @@ if not df.empty:
                 fig_comp.update_layout(margin=dict(l=10, r=10, t=30, b=10), hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white')
                 st.plotly_chart(fig_comp, use_container_width=True)
 
-                # [복구 완결] 하단 평형 매칭 종합 요약 지표 테이블 부활
+                # 하단 평형 매칭 종합 요약 지표 테이블 소생 완료
                 st.write("📊 평형 매칭 종합 요약 지표")
                 summary_records = []
                 for label in sorted(comp_df['비교단지명'].unique()):
