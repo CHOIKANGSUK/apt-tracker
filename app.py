@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import gspread
-from google.oauth2.service_account import Credentials  # 구글 공식 최신 인증 라이브러리로 교체!
+from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 
 # 1. 페이지 기본 설정
@@ -14,11 +14,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 구글 시트 데이터 로드 (최신 인증 엔진 적용)
+# 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_24():
+def load_data_v6_25():
     try:
-        # [핵심 패치] oauth2client 대신 최신 google-auth 라이브러리 사용
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -103,7 +102,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_24()
+df = load_data_v6_25()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -145,24 +144,26 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.24")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.25")
 
     main_tab0, main_tab1, main_tab2 = st.tabs(["👑 서울 랜드마크 시세트래킹 지도", "📊 단지별 정밀 분석", "⚖️ 단지간 비교 평가"])
 
-    # ==================== TAB 0: 시계열 슬라이더 + 8열 격자 지도 ====================
+    # ==================== TAB 0: 드롭다운 메뉴 + 8열 격자 지도 ====================
     with main_tab0:
         all_available_months = sorted(df['월_날짜객체'].unique())
         month_options = [pd.to_datetime(m).strftime('%y년 %m월') for m in all_available_months]
         
-        head_c1, head_c2 = st.columns([6, 4])
+        # [핵심 패치] 최신 월이 맨 위에 오도록 목록 역순 정렬
+        reversed_month_options = month_options[::-1]
+        
+        head_c1, head_c2 = st.columns([7, 3])
         with head_c1:
             st.subheader("🗺️ 서울 랜드마크 시세트래킹 지도")
+            st.caption("각 자치구 대장주의 **'국민평형(84㎡)'** 월간 평균 실거래 금액 스냅샷입니다.")
         with head_c2:
-            st.markdown("<div style='padding-top: 10px;'></div>", unsafe_allow_html=True)
-            chosen_month_str = st.select_slider("📅 시세 분석 기준월 선택", options=month_options, value=month_options[-1])
+            # [핵심 패치] 슬라이더를 제거하고 클릭형 셀렉트박스로 변경
+            chosen_month_str = st.selectbox("📅 분석 기준월 (클릭하여 변경)", options=reversed_month_options, index=0)
             chosen_month_date = all_available_months[month_options.index(chosen_month_str)]
-            
-        st.caption(f"현재 선택된 시점: **{chosen_month_str}** | 각 자치구 대장주의 **'국민평형(84㎡)'** 월간 평균 실거래 금액 스냅샷입니다.")
 
         processed_prices = {}
         for gu_name, rows in collected_data.items():
