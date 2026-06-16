@@ -6,7 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 
-# 1. 페이지 기본 설정
+# 1. 페이지 기본 설정 및 모바일 반응형 뷰포트 고정
 st.set_page_config(
     page_title="강석의 아파트 시세트래킹",
     page_icon="🏢",
@@ -14,9 +14,38 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# [핵심 패치 1] 모바일 가독성 최적화를 위한 전역 CSS 인젝션
+st.markdown("""
+<style>
+    /* 모바일에서 타이틀 및 헤더 크기 동적 조절 */
+    @media (max-width: 768px) {
+        h1 { font-size: 1.5rem !important; }
+        h2 { font-size: 1.3rem !important; }
+        h3 { font-size: 1.1rem !important; }
+        .stSelectbox label { font-size: 0.9rem !important; }
+    }
+    
+    /* 화면 여백 최소화로 모바일에서 더 넓게 쓰기 */
+    .block-container {
+        padding-top: 2rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    
+    /* 스크롤바 디자인 숨김 (터치 스와이프 전용) */
+    .scroll-container::-webkit-scrollbar {
+        display: none;
+    }
+    .scroll-container {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_25():
+def load_data_v6_26():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -37,7 +66,6 @@ def load_data_v6_25():
         st.error(f"데이터 로드 오류: {e}")
         return pd.DataFrame()
 
-# === 법정동 기준 자치구 정밀 분류 ===
 def get_gu_name(dong_name):
     dong = str(dong_name).strip().replace(" ", "")
     if any(k in dong for k in ['중화', '상봉', '면목', '신내', '망우', '묵']): return '중랑구'
@@ -102,7 +130,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_25()
+df = load_data_v6_26()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -144,24 +172,22 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.25")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.26")
 
     main_tab0, main_tab1, main_tab2 = st.tabs(["👑 서울 랜드마크 시세트래킹 지도", "📊 단지별 정밀 분석", "⚖️ 단지간 비교 평가"])
 
-    # ==================== TAB 0: 드롭다운 메뉴 + 8열 격자 지도 ====================
+    # ==================== TAB 0: 모바일 스와이프 최적화 지도 ====================
     with main_tab0:
         all_available_months = sorted(df['월_날짜객체'].unique())
         month_options = [pd.to_datetime(m).strftime('%y년 %m월') for m in all_available_months]
-        
-        # [핵심 패치] 최신 월이 맨 위에 오도록 목록 역순 정렬
         reversed_month_options = month_options[::-1]
         
-        head_c1, head_c2 = st.columns([7, 3])
-        with head_c1:
-            st.subheader("🗺️ 서울 랜드마크 시세트래킹 지도")
-            st.caption("각 자치구 대장주의 **'국민평형(84㎡)'** 월간 평균 실거래 금액 스냅샷입니다.")
-        with head_c2:
-            # [핵심 패치] 슬라이더를 제거하고 클릭형 셀렉트박스로 변경
+        st.subheader("🗺️ 서울 랜드마크 시세트래킹 지도")
+        st.caption("각 자치구 대장주의 **'국민평형(84㎡)'** 월간 평균 실거래 금액 스냅샷입니다. (모바일에서는 지도를 좌우로 밀어서 보세요👉)")
+        
+        # 모바일에서도 예쁜 비율 유지를 위한 컬럼비율 조정
+        col1, col2 = st.columns([1, 1])
+        with col1:
             chosen_month_str = st.selectbox("📅 분석 기준월 (클릭하여 변경)", options=reversed_month_options, index=0)
             chosen_month_date = all_available_months[month_options.index(chosen_month_str)]
 
@@ -192,7 +218,9 @@ if not df.empty:
             [None, "구로구", "금천구", "관악구", None, None, None, None]
         ]
 
-        html_map = "<div style='display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; background-color: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0;'>"
+        # [핵심 패치 2] 모바일 스와이프를 허용하는 가로 스크롤 컨테이너 적용 (min-width: 800px 부여)
+        html_map = "<div class='scroll-container' style='width: 100%; overflow-x: auto; white-space: nowrap; padding-bottom: 10px;'>"
+        html_map += "<div style='display: grid; grid-template-columns: repeat(8, minmax(100px, 1fr)); gap: 6px; background-color: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; min-width: 850px;'>"
         
         for row in map_grid:
             if row == ["한강_SPAN"]:
@@ -201,7 +229,7 @@ if not df.empty:
             
             for loc in row:
                 if loc is None:
-                    html_map += "<div style='height: 85px;'></div>"
+                    html_map += "<div style='height: 90px;'></div>"
                 else:
                     data = processed_prices.get(loc, {"price": "-", "name": "미수집", "active": False})
                     bg = "background-color: white; border: 1px solid #cbd5e1; box-shadow: 1px 2px 4px rgba(0,0,0,0.08);" if data['active'] else "background-color: #f1f5f9; border: 1px solid #e2e8f0; opacity: 0.5;"
@@ -209,12 +237,13 @@ if not df.empty:
                     text_weight = "font-weight: 800;" if data['active'] else "font-weight: normal;"
                     t_bg = "background-color: #facc15; color: #1e293b;" if data['active'] else "background-color: #e2e8f0; color: #94a3b8;"
                     
-                    html_map += f"<div style='{bg} border-radius: 6px; height: 85px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center;'>\
+                    # [핵심 패치 3] word-break: break-word 설정으로 모바일에서도 아파트 이름 자연스럽게 2~3줄로 내려가도록 수정
+                    html_map += f"<div style='{bg} border-radius: 6px; height: 90px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center; white-space: normal;'>\
                                     <div style='{t_bg} font-size: 8.5pt; font-weight: bold; padding: 4px 0;'>{loc}</div>\
-                                    <div style='font-size: 7.5pt; color: #475569; padding: 2px 4px; line-height: 1.15; word-break: keep-all; flex-grow: 1; display: flex; align-items: center; justify-content: center;'>{data['name']}</div>\
+                                    <div style='font-size: 7.5pt; color: #475569; padding: 2px 4px; line-height: 1.2; word-break: break-word; flex-grow: 1; display: flex; align-items: center; justify-content: center;'>{data['name']}</div>\
                                     <div style='font-size: 13pt; {text_weight} color: {text_c}; padding-bottom: 4px;'>{data['price']}</div>\
                                  </div>"
-        html_map += "</div>"
+        html_map += "</div></div>"
         st.markdown(html_map, unsafe_allow_html=True)
 
         st.markdown("<br><br>", unsafe_allow_html=True)
@@ -227,9 +256,12 @@ if not df.empty:
             landmark_stats = landmark_df_84.groupby('월_날짜객체').agg({'거래금액(숫자)': 'mean'}).reset_index()
             fig_idx = go.Figure()
             fig_idx.add_trace(go.Scatter(x=landmark_stats['월_날짜객체'], y=landmark_stats['거래금액(숫자)'], mode='lines+markers', line=dict(color='#3b82f6', width=4), marker=dict(size=8, color='white', line=dict(width=2, color='#3b82f6')), name="서울 대장주 84㎡ 평균"))
-            fig_idx.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=400, paper_bgcolor='white', plot_bgcolor='white', hovermode='x unified')
+            fig_idx.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=350, paper_bgcolor='white', plot_bgcolor='white', hovermode='x unified')
             fig_idx.update_xaxes(type='date', tickformat="%y년 %m월", dtick="M3", showgrid=True, gridcolor='#f1f5f9')
             fig_idx.update_yaxes(showgrid=True, gridcolor='#f1f5f9')
+            
+            # 모바일 최적화를 위해 범례를 차트 하단 중앙으로 이동
+            fig_idx.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
             st.plotly_chart(fig_idx, use_container_width=True)
 
     # ==================== TAB 1: 단일 단지 시황 분석 ====================
@@ -238,10 +270,11 @@ if not df.empty:
         seoul_gus = ["전체구", "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구", "노원구", "도봉구", "동대문구", "동작구", "마포구", "서대문구", "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구", "용산구", "은평구", "종로구", "중구", "중랑구"]
 
         with st.expander(f"🗺️ 현재 선택된 지역: [ {st.session_state['selected_gu']} ] (터치하여 변경)", expanded=False):
-            grid_cols = st.columns(4)
+            # 모바일에서는 3칸으로 보여주어 버튼 터치 영역 확보
+            grid_cols = st.columns(3)
             for idx, gu in enumerate(seoul_gus):
                 button_label = f"🌐 {gu}" if gu == "전체구" and gu == st.session_state['selected_gu'] else (f"📍 {gu}" if gu == st.session_state['selected_gu'] else gu)
-                with grid_cols[idx % 4]:
+                with grid_cols[idx % 3]:
                     if st.button(button_label, key=f"gu_btn_{gu}", use_container_width=True):
                         st.session_state['selected_gu'] = gu
                         st.rerun()
@@ -275,11 +308,11 @@ if not df.empty:
                 
                 card_cols = st.columns(2)
                 with card_cols[0]:
-                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>최근 실거래가</p><h3 style='margin:4px 0; color:#1e3a8a; font-size:16pt;'>{recent_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.iloc[-1]['거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>고점 대비 하락률</p><h3 style='margin:4px 0; color:{'#ef4444' if drop_rate >= 0 else '#3b82f6'}; font-size:16pt;'>{drop_rate:.1f}%</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>최고가 대비 변동폭</p></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>최근 실거래가</p><h3 style='margin:4px 0; color:#1e3a8a; font-size:15pt;'>{recent_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.iloc[-1]['거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>고점 대비 하락률</p><h3 style='margin:4px 0; color:{'#ef4444' if drop_rate >= 0 else '#3b82f6'}; font-size:15pt;'>{drop_rate:.1f}%</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>최고가 대비 변동폭</p></div>", unsafe_allow_html=True)
                 with card_cols[1]:
-                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최고가</p><h3 style='margin:4px 0; color:#ef4444; font-size:16pt;'>{max_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[max_idx, '거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최저가</p><h3 style='margin:4px 0; color:#3b82f6; font-size:16pt;'>{min_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[min_idx, '거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최고가</p><h3 style='margin:4px 0; color:#ef4444; font-size:15pt;'>{max_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[max_idx, '거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최저가</p><h3 style='margin:4px 0; color:#3b82f6; font-size:15pt;'>{min_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[min_idx, '거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
                 
                 st.write("📈 시세 추이 및 거래량")
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -290,7 +323,7 @@ if not df.empty:
                 fig.add_annotation(x=final_df.loc[max_idx, '월_한글텍스트'], y=final_df.loc[max_idx, '거래금액(숫자)'], text="최고", showarrow=True, arrowhead=1, ax=0, ay=-30, bgcolor="#ef4444", font=dict(color="white", size=10))
                 fig.add_annotation(x=final_df.loc[min_idx, '월_한글텍스트'], y=final_df.loc[min_idx, '거래금액(숫자)'], text="최저", showarrow=True, arrowhead=1, ax=0, ay=30, bgcolor="#3b82f6", font=dict(color="white", size=10))
                 
-                fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white')
+                fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=350, hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
                 st.plotly_chart(fig, use_container_width=True)
 
                 st.write("📋 전체 실거래 내역 리스트")
@@ -298,7 +331,7 @@ if not df.empty:
                 final_df.loc[max_idx, '비고'] = "🔴 최고가"
                 final_df.loc[min_idx, '비고'] = "🔵 최저가"
                 display_df = final_df[['거래일자', '층', '거래금액(숫자)', '비고']].copy()
-                display_df['거래일자'] = display_df['거래일자'].dt.strftime('%Y-%m-%d')
+                display_df['거래일자'] = display_df['거래일자'].dt.strftime('%y-%m-%d')
                 display_df = display_df.sort_values(by='거래일자', ascending=False)
                 display_df.columns = ['거래일자', '층', '거래금액(만)', '비고']
                 styled_df = display_df.style.format({'거래금액(만)': '{:,.0f}'}).set_properties(**{'text-align': 'center'})
@@ -316,13 +349,14 @@ if not df.empty:
         
         if selected_apts:
             apt_pyung_mapping = {}
-            st.markdown("#### 🔍 단지별 비교 평형(전용면적) 지정")
-            cols = st.columns(min(len(selected_apts), 3)) 
+            st.markdown("#### 🔍 단지별 비교 평형 지정")
+            # 모바일 최적화: 컬럼을 2개로 줄여서 드롭다운 넓게 쓰기
+            cols = st.columns(min(len(selected_apts), 2)) 
             for idx, apt in enumerate(selected_apts):
-                with cols[idx % 3]:
+                with cols[idx % 2]:
                     apt_df = df[df['단지선택명'] == apt]
                     available_pyungs = sorted(apt_df['평형'].unique())
-                    chosen_pyung = st.selectbox(f"{apt}", available_pyungs, key=f"comp_pyung_{idx}")
+                    chosen_pyung = st.selectbox(f"{apt.split()[1] if len(apt.split())>1 else apt}", available_pyungs, key=f"comp_pyung_{idx}")
                     apt_pyung_mapping[apt] = chosen_pyung
             
             matched_records = []
@@ -340,10 +374,10 @@ if not df.empty:
                 for label in sorted(comp_df['비교단지명'].unique()):
                     label_data = comp_stats[comp_stats['비교단지명'] == label].sort_values('월_날짜객체')
                     fig_comp.add_trace(go.Scatter(x=label_data['월_날짜객체'], y=label_data['평균가'], mode='lines+markers', name=label, line=dict(width=2.5), connectgaps=True, hovertemplate='금액: %{y}만원'))
-                fig_comp.update_layout(margin=dict(l=10, r=10, t=30, b=10), hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white')
+                fig_comp.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=350, hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
                 st.plotly_chart(fig_comp, use_container_width=True)
 
-                st.write("📊 평형 매칭 종합 요약 지표")
+                st.write("📊 매칭 종합 요약 지표 (좌우 스크롤👉)")
                 summary_records = []
                 for label in sorted(comp_df['비교단지명'].unique()):
                     unit_df = comp_df[comp_df['비교단지명'] == label]
@@ -355,11 +389,10 @@ if not df.empty:
                         mn = unit_df['거래금액(숫자)'].min()
                         dr = ((recent - mx) / mx) * 100
                         summary_records.append({
-                            "지역구": sample_row['자치구'], "비교 대상 단지 (평형)": label, "연식 (준공일)": apt_meta['준공'], "구조 (방/화)": apt_meta['구조'], "최근거래가(만)": recent, "역대최고가(만)": mx, "역대최저가(만)": mn, "고점대비하락률": f"{dr:.1f}%"
+                            "단지": label.split()[1] if len(label.split())>1 else label, "최근가": f"{recent:,}", "최고가": f"{mx:,}", "최저가": f"{mn:,}", "낙폭": f"{dr:.1f}%", "연식": apt_meta['준공']
                         })
                 
                 summary_df = pd.DataFrame(summary_records)
-                styled_summary = summary_df.style.format({'최근거래가(만)': '{:,.0f}', '역대최고가(만)': '{:,.0f}', '역대최저가(만)': '{:,.0f}'}).set_properties(**{'text-align': 'center'})
-                st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
 else:
     st.error("데이터를 가져오지 못했습니다.")
