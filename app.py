@@ -14,28 +14,21 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# [핵심 패치 1] 모바일 가독성 최적화를 위한 전역 CSS 인젝션
+# 모바일 가독성 최적화를 위한 전역 CSS 인젝션
 st.markdown("""
 <style>
-    /* 모바일에서 타이틀 및 헤더 크기 동적 조절 */
     @media (max-width: 768px) {
         h1 { font-size: 1.5rem !important; }
         h2 { font-size: 1.3rem !important; }
         h3 { font-size: 1.1rem !important; }
         .stSelectbox label { font-size: 0.9rem !important; }
     }
-    
-    /* 화면 여백 최소화로 모바일에서 더 넓게 쓰기 */
     .block-container {
         padding-top: 2rem;
         padding-left: 1rem;
         padding-right: 1rem;
     }
-    
-    /* 스크롤바 디자인 숨김 (터치 스와이프 전용) */
-    .scroll-container::-webkit-scrollbar {
-        display: none;
-    }
+    .scroll-container::-webkit-scrollbar { display: none; }
     .scroll-container {
         -ms-overflow-style: none;
         scrollbar-width: none;
@@ -45,7 +38,7 @@ st.markdown("""
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_26():
+def load_data_v6_27():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -130,7 +123,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_26()
+df = load_data_v6_27()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -172,7 +165,7 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.26")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.27")
 
     main_tab0, main_tab1, main_tab2 = st.tabs(["👑 서울 랜드마크 시세트래킹 지도", "📊 단지별 정밀 분석", "⚖️ 단지간 비교 평가"])
 
@@ -185,7 +178,6 @@ if not df.empty:
         st.subheader("🗺️ 서울 랜드마크 시세트래킹 지도")
         st.caption("각 자치구 대장주의 **'국민평형(84㎡)'** 월간 평균 실거래 금액 스냅샷입니다. (모바일에서는 지도를 좌우로 밀어서 보세요👉)")
         
-        # 모바일에서도 예쁜 비율 유지를 위한 컬럼비율 조정
         col1, col2 = st.columns([1, 1])
         with col1:
             chosen_month_str = st.selectbox("📅 분석 기준월 (클릭하여 변경)", options=reversed_month_options, index=0)
@@ -218,7 +210,6 @@ if not df.empty:
             [None, "구로구", "금천구", "관악구", None, None, None, None]
         ]
 
-        # [핵심 패치 2] 모바일 스와이프를 허용하는 가로 스크롤 컨테이너 적용 (min-width: 800px 부여)
         html_map = "<div class='scroll-container' style='width: 100%; overflow-x: auto; white-space: nowrap; padding-bottom: 10px;'>"
         html_map += "<div style='display: grid; grid-template-columns: repeat(8, minmax(100px, 1fr)); gap: 6px; background-color: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; min-width: 850px;'>"
         
@@ -237,7 +228,6 @@ if not df.empty:
                     text_weight = "font-weight: 800;" if data['active'] else "font-weight: normal;"
                     t_bg = "background-color: #facc15; color: #1e293b;" if data['active'] else "background-color: #e2e8f0; color: #94a3b8;"
                     
-                    # [핵심 패치 3] word-break: break-word 설정으로 모바일에서도 아파트 이름 자연스럽게 2~3줄로 내려가도록 수정
                     html_map += f"<div style='{bg} border-radius: 6px; height: 90px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center; white-space: normal;'>\
                                     <div style='{t_bg} font-size: 8.5pt; font-weight: bold; padding: 4px 0;'>{loc}</div>\
                                     <div style='font-size: 7.5pt; color: #475569; padding: 2px 4px; line-height: 1.2; word-break: break-word; flex-grow: 1; display: flex; align-items: center; justify-content: center;'>{data['name']}</div>\
@@ -259,8 +249,6 @@ if not df.empty:
             fig_idx.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=350, paper_bgcolor='white', plot_bgcolor='white', hovermode='x unified')
             fig_idx.update_xaxes(type='date', tickformat="%y년 %m월", dtick="M3", showgrid=True, gridcolor='#f1f5f9')
             fig_idx.update_yaxes(showgrid=True, gridcolor='#f1f5f9')
-            
-            # 모바일 최적화를 위해 범례를 차트 하단 중앙으로 이동
             fig_idx.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
             st.plotly_chart(fig_idx, use_container_width=True)
 
@@ -270,7 +258,6 @@ if not df.empty:
         seoul_gus = ["전체구", "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구", "노원구", "도봉구", "동대문구", "동작구", "마포구", "서대문구", "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구", "용산구", "은평구", "종로구", "중구", "중랑구"]
 
         with st.expander(f"🗺️ 현재 선택된 지역: [ {st.session_state['selected_gu']} ] (터치하여 변경)", expanded=False):
-            # 모바일에서는 3칸으로 보여주어 버튼 터치 영역 확보
             grid_cols = st.columns(3)
             for idx, gu in enumerate(seoul_gus):
                 button_label = f"🌐 {gu}" if gu == "전체구" and gu == st.session_state['selected_gu'] else (f"📍 {gu}" if gu == st.session_state['selected_gu'] else gu)
@@ -331,7 +318,7 @@ if not df.empty:
                 final_df.loc[max_idx, '비고'] = "🔴 최고가"
                 final_df.loc[min_idx, '비고'] = "🔵 최저가"
                 display_df = final_df[['거래일자', '층', '거래금액(숫자)', '비고']].copy()
-                display_df['거래일자'] = display_df['거래일자'].dt.strftime('%y-%m-%d')
+                display_df['거래일자'] = display_df['거래일자'].dt.strftime('%Y-%m-%d')
                 display_df = display_df.sort_values(by='거래일자', ascending=False)
                 display_df.columns = ['거래일자', '층', '거래금액(만)', '비고']
                 styled_df = display_df.style.format({'거래금액(만)': '{:,.0f}'}).set_properties(**{'text-align': 'center'})
@@ -341,7 +328,7 @@ if not df.empty:
         else:
             st.warning("데이터가 아직 수집되지 않았습니다.")
 
-    # ==================== TAB 2: 다중 단지 비교 평가 ====================
+    # ==================== TAB 2: 다중 단지 비교 평가 (표 데이터 원복 및 연식 계산 추가) ====================
     with main_tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
         all_apts = sorted(df['단지선택명'].unique())
@@ -350,7 +337,6 @@ if not df.empty:
         if selected_apts:
             apt_pyung_mapping = {}
             st.markdown("#### 🔍 단지별 비교 평형 지정")
-            # 모바일 최적화: 컬럼을 2개로 줄여서 드롭다운 넓게 쓰기
             cols = st.columns(min(len(selected_apts), 2)) 
             for idx, apt in enumerate(selected_apts):
                 with cols[idx % 2]:
@@ -377,6 +363,7 @@ if not df.empty:
                 fig_comp.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=350, hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
                 st.plotly_chart(fig_comp, use_container_width=True)
 
+                # [핵심 복구] 누락되었던 지역구, 방구조 칼럼 완벽 원복 및 2026년 기준 몇 년 차 계산
                 st.write("📊 매칭 종합 요약 지표 (좌우 스크롤👉)")
                 summary_records = []
                 for label in sorted(comp_df['비교단지명'].unique()):
@@ -388,8 +375,26 @@ if not df.empty:
                         mx = unit_df['거래금액(숫자)'].max()
                         mn = unit_df['거래금액(숫자)'].min()
                         dr = ((recent - mx) / mx) * 100
+                        
+                        # 몇년차 연산 (2026년 기준)
+                        built_str = apt_meta['준공']
+                        age_text = ""
+                        if built_str != "-" and "." in built_str:
+                            try:
+                                b_year = int(built_str.split(".")[0])
+                                age_text = f" ({2026 - b_year}년차)"
+                            except:
+                                pass
+
                         summary_records.append({
-                            "단지": label.split()[1] if len(label.split())>1 else label, "최근가": f"{recent:,}", "최고가": f"{mx:,}", "최저가": f"{mn:,}", "낙폭": f"{dr:.1f}%", "연식": apt_meta['준공']
+                            "지역구": sample_row['자치구'],
+                            "단지명": label.split()[1] if len(label.split())>1 else label,
+                            "연식": f"{built_str}{age_text}",
+                            "구조": apt_meta['구조'],
+                            "최근가(만)": f"{recent:,}",
+                            "최고가(만)": f"{mx:,}",
+                            "최저가(만)": f"{mn:,}",
+                            "고점대비 하락률": f"{dr:.1f}%"
                         })
                 
                 summary_df = pd.DataFrame(summary_records)
