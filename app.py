@@ -76,9 +76,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 구글 시트 데이터 로드 엔진 (10분 캐싱)
 @st.cache_data(ttl=600)
-def load_data_v6_30():
+def load_data_v6_31():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -99,7 +98,6 @@ def load_data_v6_30():
         st.error(f"데이터 로드 오류: {e}")
         return pd.DataFrame()
 
-# 자치구 판단 자동 정제 규칙
 def get_gu_name(dong_name):
     dong = str(dong_name).strip().replace(" ", "")
     if any(k in dong for k in ['중화', '상봉', '면목', '신내', '망우', '묵']): return '중랑구'
@@ -129,13 +127,11 @@ def get_gu_name(dong_name):
     elif any(k in dong for k in ['독산', '시흥', '가산']): return '금천구'
     return '기타/미분류'
 
-# 가격 한글 변환 함수 (예: 185000 -> 18억 5,000만)
 def format_price(price_man):
     price = int(price_man)
     if price % 10000 == 0: return f"{price // 10000}억"
     else: return f"{price // 10000}억 {(price % 10000):,}만"
 
-# 단지별 고정 상세정보 사전
 def get_apt_info(apt_name, pyung=None):
     info = {"세대수": "-", "준공": "-", "용적률": "-", "구조": "-"}
     clean_name = str(apt_name).replace(" ", "").lower()
@@ -171,10 +167,9 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_30()
+df = load_data_v6_31()
 
 if not df.empty:
-    # 데이터 전처리
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
     df['자치구'] = df['법정동'].apply(get_gu_name)
     df['거래금액(숫자)'] = df['거래금액(만)'].astype(str).str.replace(',', '').astype(int)
@@ -182,7 +177,6 @@ if not df.empty:
     df['월_날짜객체'] = df['거래일자'].dt.to_period('M').dt.to_timestamp()
     df['월_한글텍스트'] = df['거래일자'].dt.strftime('%y년 %m월')
 
-    # 단지별/평형별 역대 최고가 마스터 피벗 생성
     max_prices = df.groupby(['단지선택명', '평형'])['거래금액(숫자)'].max().to_dict()
 
     match_rules = {
@@ -215,9 +209,8 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.30")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.31")
 
-    # 4개의 완성형 탭 구조 선언
     main_tab0, main_tab_new, main_tab1, main_tab2 = st.tabs([
         "👑 서울 랜드마크 시세트래킹 지도", 
         "🚨 주간 실거래 하이라이트", 
@@ -299,7 +292,6 @@ if not df.empty:
         landmark_df_84 = landmark_df[landmark_df['평형'].between(83, 85)]
         
         if not landmark_df_84.empty:
-            # [🔥 핵심 오류 수정 완료] Pandas agg 딕셔너리 문법 오타 수정
             landmark_stats = landmark_df_84.groupby('월_날짜객체').agg(거래금액=('거래금액(숫자)', 'mean')).reset_index()
             fig_idx = go.Figure()
             fig_idx.add_trace(go.Scatter(x=landmark_stats['월_날짜객체'], y=landmark_stats['거래금액'], mode='lines+markers', line=dict(color='#3b82f6', width=4), marker=dict(size=8, color='white', line=dict(width=2, color='#3b82f6')), name="서울 대장주 84㎡ 평균"))
@@ -309,7 +301,7 @@ if not df.empty:
             fig_idx.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
             st.plotly_chart(fig_idx, use_container_width=True)
 
-    # ==================== TAB 1: 주간 실거래 하이라이트 (실까 UI 마크업 완성) ====================
+    # ==================== TAB 1: 주간 실거래 하이라이트 (🔥 HTML 들여쓰기 오류 수정 완료) ====================
     with main_tab_new:
         latest_date = df['거래일자'].max()
         week_ago = latest_date - timedelta(days=7)
@@ -349,47 +341,44 @@ if not df.empty:
                 if 58 <= pyung_key <= 60: trades_59.append(trade_info)
                 if 83 <= pyung_key <= 85: trades_84.append(trade_info)
                 
-            # HTML 표 렌더링용 빌더 함수
+            # [핵심 패치] HTML 코드 내부의 탭/스페이스바 들여쓰기를 제거하여 마크다운 코드블록 변환 에러 차단
             def make_highlight_table(data_list, title, title_color="#ef4444"):
                 if not data_list: return f"<div style='text-align:center; color:#94a3b8; padding:20px; font-size:9.5pt;'>조건에 맞는 주간 거래가 없습니다.</div>"
-                html = f"""
-                <div style="text-align:center; margin-top:20px; margin-bottom:10px;">
-                    <span style="background-color:white; padding:0 15px; font-weight:bold; font-size:12pt; color:{title_color}; position:relative; z-index:2;">━━━ {title} ━━━</span>
-                </div>
-                <table class="highlight-table">
-                    <tr>
-                        <th style="width:5%;">#</th>
-                        <th style="width:15%;">시군구</th>
-                        <th style="width:35%; text-align:left;">아파트명</th>
-                        <th style="width:15%;">면적</th>
-                        <th style="width:10%;">층</th>
-                        <th style="width:20%; text-align:right; padding-right:15px;">가격</th>
-                    </tr>
-                """
+                
+                html = f"""<div style="text-align:center; margin-top:20px; margin-bottom:10px;">
+<span style="background-color:white; padding:0 15px; font-weight:bold; font-size:12pt; color:{title_color}; position:relative; z-index:2;">━━━ {title} ━━━</span>
+</div>
+<table class="highlight-table">
+<tr>
+<th style="width:5%;">#</th>
+<th style="width:15%;">시군구</th>
+<th style="width:35%; text-align:left;">아파트명</th>
+<th style="width:15%;">면적</th>
+<th style="width:10%;">층</th>
+<th style="width:20%; text-align:right; padding-right:15px;">가격</th>
+</tr>"""
+                
                 for i, item in enumerate(data_list[:15]):
                     badge = "<span class='badge-new-high'>신고가</span>" if item['is_new_high'] else ""
                     html += f"""
-                    <tr>
-                        <td style="color:#94a3b8; font-weight:bold;">{i+1}</td>
-                        <td>{item['시군구']}</td>
-                        <td style="text-align:left; font-weight:bold;">{item['아파트명']} {badge}</td>
-                        <td>{item['면적']}</td>
-                        <td>{item['층']}</td>
-                        <td class="price-col">{item['가격']}</td>
-                    </tr>
-                    """
-                html += "</table>"
+<tr>
+<td style="color:#94a3b8; font-weight:bold;">{i+1}</td>
+<td>{item['시군구']}</td>
+<td style="text-align:left; font-weight:bold;">{item['아파트명']} {badge}</td>
+<td>{item['면적']}</td>
+<td>{item['층']}</td>
+<td class="price-col">{item['가격']}</td>
+</tr>"""
+                html += "\n</table>"
                 return html
 
             st.markdown(make_highlight_table(new_highs, "신고가 주요거래", "#ef4444"), unsafe_allow_html=True)
             st.markdown(make_highlight_table(trades_84, "84㎡ 주요거래", "#334155"), unsafe_allow_html=True)
             st.markdown(make_highlight_table(trades_59, "59㎡ 주요거래", "#334155"), unsafe_allow_html=True)
 
-            st.markdown("""
-                <div style="text-align:center; margin-top:30px; margin-bottom:10px;">
-                    <span style="background-color:white; padding:0 15px; font-weight:bold; font-size:12pt; color:#3b82f6; position:relative; z-index:2;">━━━ 시군구별 거래 현황 ━━━</span>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown("""<div style="text-align:center; margin-top:30px; margin-bottom:10px;">
+<span style="background-color:white; padding:0 15px; font-weight:bold; font-size:12pt; color:#3b82f6; position:relative; z-index:2;">━━━ 시군구별 거래 현황 ━━━</span>
+</div>""", unsafe_allow_html=True)
             
             gu_counts = recent_df['자치구'].value_counts().reset_index()
             gu_counts.columns = ['자치구', '거래건수']
