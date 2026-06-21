@@ -14,7 +14,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 가독성 최적화를 위한 전역 CSS 인젝션
 st.markdown("""
 <style>
     @media (max-width: 768px) {
@@ -33,12 +32,53 @@ st.markdown("""
         -ms-overflow-style: none;
         scrollbar-width: none;
     }
+    /* 실까 스타일 테이블 CSS */
+    .highlight-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: 'Apple SD Gothic Neo', sans-serif;
+        font-size: 9pt;
+        margin-bottom: 30px;
+    }
+    .highlight-table th {
+        border-bottom: 2px solid #cbd5e1;
+        border-top: 1px solid #cbd5e1;
+        padding: 10px 5px;
+        text-align: center;
+        color: #64748b;
+        font-weight: normal;
+    }
+    .highlight-table td {
+        border-bottom: 1px solid #e2e8f0;
+        padding: 12px 5px;
+        text-align: center;
+        color: #334155;
+    }
+    .highlight-table .title-row td {
+        font-weight: bold;
+    }
+    .price-col {
+        font-weight: 800;
+        font-size: 11pt;
+        color: #0f172a;
+        text-align: right !important;
+        padding-right: 15px !important;
+    }
+    .badge-new-high {
+        background-color: #ef4444;
+        color: white;
+        font-size: 7pt;
+        padding: 2px 5px;
+        border-radius: 3px;
+        margin-left: 5px;
+        vertical-align: middle;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # 구글 시트 데이터 로드
 @st.cache_data(ttl=600)
-def load_data_v6_27():
+def load_data_v6_28():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -88,6 +128,11 @@ def get_gu_name(dong_name):
     elif any(k in dong for k in ['독산', '시흥', '가산']): return '금천구'
     return '기타/미분류'
 
+def format_price(price_man):
+    price = int(price_man)
+    if price % 10000 == 0: return f"{price // 10000}억"
+    else: return f"{price // 10000}억 {price % 10000:,}만"
+
 def get_apt_info(apt_name, pyung=None):
     info = {"세대수": "-", "준공": "-", "용적률": "-", "구조": "-"}
     clean_name = str(apt_name).replace(" ", "").lower()
@@ -123,7 +168,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_27()
+df = load_data_v6_28()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -165,9 +210,10 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.27")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.28")
 
-    main_tab0, main_tab1, main_tab2 = st.tabs(["👑 서울 랜드마크 시세트래킹 지도", "📊 단지별 정밀 분석", "⚖️ 단지간 비교 평가"])
+    # [핵심 패치] 4개의 탭 구조로 확장 (주간 랭킹 추가)
+    main_tab0, main_tab_new, main_tab1, main_tab2 = st.tabs(["👑 서울 랜드마크 시세트래킹 지도", "🚨 주간 실거래 하이라이트", "📊 단지별 정밀 분석", "⚖️ 단지간 비교 평가"])
 
     # ==================== TAB 0: 모바일 스와이프 최적화 지도 ====================
     with main_tab0:
@@ -252,9 +298,104 @@ if not df.empty:
             fig_idx.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
             st.plotly_chart(fig_idx, use_container_width=True)
 
-    # ==================== TAB 1: 단일 단지 시황 분석 ====================
+    # ==================== TAB NEW: 주간 실거래 및 신고가 하이라이트 ('실까' UI 복제) ====================
+    with main_tab_new:
+        latest_date = df['거래일자'].max()
+        week_ago = latest_date - timedelta(days=7)
+        
+        st.markdown(f"<h2>🚨 서울 랜드마크 주간 주요거래 <span style='font-size:12pt; color:#64748b; font-weight:normal;'>({week_ago.strftime('%m/%d')} ~ {latest_date.strftime('%m/%d')} 기준)</span></h2>", unsafe_allow_html=True)
+        
+        # 최근 7일 데이터 필터링
+        recent_df = df[df['거래일자'] >= week_ago].copy()
+        
+        if recent_df.empty:
+            st.info("최근 7일간 업데이트된 실거래 내역이 없습니다.")
+        else:
+            # 신고가 판별 및 리스트업
+            new_highs = []
+            trades_59 = []
+            trades_84 = []
+            
+            for idx, row in recent_df.sort_values(by='거래금액(숫자)', ascending=False).iterrows():
+                apt_key = row['단지선택명']
+                pyung_key = row['평형']
+                price = row['거래금액(숫자)']
+                
+                # 전체 기간에서 해당 평형의 최고가 가져오기
+                all_time_max = max_prices.get((apt_key, pyung_key), price)
+                is_new_high = (price >= all_time_max)
+                
+                apt_display_name = apt_key.split()[1] if len(apt_key.split())>1 else apt_key
+                
+                trade_info = {
+                    "시군구": row['자치구'],
+                    "아파트명": apt_display_name,
+                    "면적": f"{pyung_key}㎡",
+                    "층": f"{row['층']}층",
+                    "가격": format_price(price),
+                    "is_new_high": is_new_high,
+                    "date": row['거래일자']
+                }
+                
+                if is_new_high: new_highs.append(trade_info)
+                if 58 <= pyung_key <= 60: trades_59.append(trade_info)
+                if 83 <= pyung_key <= 85: trades_84.append(trade_info)
+                
+            # HTML 표 생성 함수
+            def make_highlight_table(data_list, title, title_color="#ef4444"):
+                if not data_list: return ""
+                html = f"""
+                <div style="text-align:center; margin-top:20px; margin-bottom:10px;">
+                    <span style="background-color:white; padding:0 15px; font-weight:bold; font-size:12pt; color:{title_color}; position:relative; z-index:2;">━━━ {title} ━━━</span>
+                </div>
+                <table class="highlight-table">
+                    <tr>
+                        <th style="width:5%;">#</th>
+                        <th style="width:15%;">시군구</th>
+                        <th style="width:35%; text-align:left;">아파트명</th>
+                        <th style="width:15%;">면적</th>
+                        <th style="width:10%;">층</th>
+                        <th style="width:20%; text-align:right; padding-right:15px;">가격</th>
+                    </tr>
+                """
+                for i, item in enumerate(data_list[:15]): # 최대 15개까지만 노출
+                    badge = "<span class='badge-new-high'>신고가</span>" if item['is_new_high'] else ""
+                    html += f"""
+                    <tr>
+                        <td style="color:#94a3b8; font-weight:bold;">{i+1}</td>
+                        <td>{item['시군구']}</td>
+                        <td style="text-align:left; font-weight:bold;">{item['아파트명']} {badge}</td>
+                        <td>{item['면적']}</td>
+                        <td>{item['층']}</td>
+                        <td class="price-col">{item['가격']}</td>
+                    </tr>
+                    """
+                html += "</table>"
+                return html
+
+            st.markdown(make_highlight_table(new_highs, "신고가 주요거래", "#ef4444"), unsafe_allow_html=True)
+            st.markdown(make_highlight_table(trades_84, "84㎡ 주요거래", "#334155"), unsafe_allow_html=True)
+            st.markdown(make_highlight_table(trades_59, "59㎡ 주요거래", "#334155"), unsafe_allow_html=True)
+
+            # 시군구별 거래 현황 요약 박스
+            st.markdown("""
+                <div style="text-align:center; margin-top:30px; margin-bottom:10px;">
+                    <span style="background-color:white; padding:0 15px; font-weight:bold; font-size:12pt; color:#3b82f6; position:relative; z-index:2;">━━━ 시군구별 거래 현황 ━━━</span>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            gu_counts = recent_df['자치구'].value_counts().reset_index()
+            gu_counts.columns = ['자치구', '거래건수']
+            
+            gu_html = "<div style='display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-bottom:30px;'>"
+            for _, row in gu_counts.iterrows():
+                gu_html += f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:8px 15px; border-radius:20px; font-size:9pt;'><span style='color:#64748b;'>{row['자치구']}</span> <span style='font-weight:bold; color:#1e3a8a;'>{row['거래건수']}건</span></div>"
+            gu_html += "</div>"
+            st.markdown(gu_html, unsafe_allow_html=True)
+
+    # ==================== TAB 2: 단일 단지 시황 분석 ====================
     with main_tab1:
-        if 'selected_gu' not in st.session_state: st.session_state['selected_gu'] = '중랑구'
+        if 'selected_gu' not in st.session_state: st.session_state['selected_gu'] = '전체구'
         seoul_gus = ["전체구", "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구", "노원구", "도봉구", "동대문구", "동작구", "마포구", "서대문구", "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구", "용산구", "은평구", "종로구", "중구", "중랑구"]
 
         with st.expander(f"🗺️ 현재 선택된 지역: [ {st.session_state['selected_gu']} ] (터치하여 변경)", expanded=False):
@@ -328,7 +469,7 @@ if not df.empty:
         else:
             st.warning("데이터가 아직 수집되지 않았습니다.")
 
-    # ==================== TAB 2: 다중 단지 비교 평가 (표 데이터 원복 및 연식 계산 추가) ====================
+    # ==================== TAB 3: 다중 단지 비교 평가 ====================
     with main_tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
         all_apts = sorted(df['단지선택명'].unique())
@@ -363,7 +504,6 @@ if not df.empty:
                 fig_comp.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=350, hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
                 st.plotly_chart(fig_comp, use_container_width=True)
 
-                # [핵심 복구] 누락되었던 지역구, 방구조 칼럼 완벽 원복 및 2026년 기준 몇 년 차 계산
                 st.write("📊 매칭 종합 요약 지표 (좌우 스크롤👉)")
                 summary_records = []
                 for label in sorted(comp_df['비교단지명'].unique()):
@@ -376,7 +516,6 @@ if not df.empty:
                         mn = unit_df['거래금액(숫자)'].min()
                         dr = ((recent - mx) / mx) * 100
                         
-                        # 몇년차 연산 (2026년 기준)
                         built_str = apt_meta['준공']
                         age_text = ""
                         if built_str != "-" and "." in built_str:
