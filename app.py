@@ -40,19 +40,19 @@ st.markdown("""
         border-collapse: collapse;
         font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
         font-size: 9.5pt;
-        margin-bottom: 30px;
+        margin-bottom: 10px;
     }
     .highlight-table th {
         border-bottom: 2px solid #cbd5e1;
         border-top: 1px solid #cbd5e1;
-        padding: 10px 5px;
+        padding: 10px 10px;
         text-align: center;
         color: #64748b;
         font-weight: normal;
     }
     .highlight-table td {
         border-bottom: 1px solid #e2e8f0;
-        padding: 12px 5px;
+        padding: 12px 10px;
         text-align: center;
         color: #334155;
     }
@@ -77,7 +77,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
-def load_data_v6_32():
+def load_data_v6_33():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -167,7 +167,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_32()
+df = load_data_v6_33()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -209,7 +209,7 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.32")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.33")
 
     main_tab0, main_tab_new, main_tab1, main_tab2 = st.tabs([
         "👑 서울 랜드마크 시세트래킹 지도", 
@@ -301,7 +301,7 @@ if not df.empty:
             fig_idx.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
             st.plotly_chart(fig_idx, use_container_width=True)
 
-    # ==================== TAB 1: 주간 실거래 하이라이트 (🔥 실거래일 및 차액 엔진 적용) ====================
+    # ==================== TAB 1: 주간 실거래 하이라이트 (🔥 모바일 스와이프 및 줄바꿈 방지 적용) ====================
     with main_tab_new:
         latest_date = df['거래일자'].max()
         week_ago = latest_date - timedelta(days=7)
@@ -313,7 +313,6 @@ if not df.empty:
         if recent_df.empty:
             st.info("최근 7일간 업데이트된 실거래 내역이 없습니다.")
         else:
-            # 1. 최신순으로 정렬 (날짜 내림차순, 같은 날짜면 금액 내림차순)
             recent_df = recent_df.sort_values(by=['거래일자', '거래금액(숫자)'], ascending=[False, False])
             
             new_highs = []
@@ -326,7 +325,6 @@ if not df.empty:
                 price = row['거래금액(숫자)']
                 t_date = row['거래일자']
                 
-                # 2. 전 최고가 찾기 (현재 거래일자 '이전'의 데이터만 추출)
                 past_df = df[(df['단지선택명'] == apt_key) & (df['평형'] == pyung_key) & (df['거래일자'] < t_date)]
                 
                 is_new_high = False
@@ -334,7 +332,6 @@ if not df.empty:
                 
                 if not past_df.empty:
                     prev_max = past_df['거래금액(숫자)'].max()
-                    # 이전 최고가보다 높은 경우에만 신고가로 판별하고 차액 계산
                     if price > prev_max:
                         is_new_high = True
                         diff = price - prev_max
@@ -348,7 +345,6 @@ if not df.empty:
                         else:
                             diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{man:,}만원)</span>"
                 else:
-                    # 과거 데이터가 아예 없는 경우 (첫 거래)
                     is_new_high = True
                     diff_str = ""
                 
@@ -369,14 +365,16 @@ if not df.empty:
                 if 58 <= pyung_key <= 60: trades_59.append(trade_info)
                 if 83 <= pyung_key <= 85: trades_84.append(trade_info)
                 
-            # [핵심 패치] 실거래일 컬럼 추가 및 컬럼 간 넓이 비율 재조정
+            # [핵심 패치] 모바일에서 표가 줄바꿈되지 않고 좌우로 스크롤되도록 CSS 클래스와 래퍼(wrapper) 적용
             def make_highlight_table(data_list, title, title_color="#ef4444"):
                 if not data_list: return f"<div style='text-align:center; color:#94a3b8; padding:20px; font-size:9.5pt;'>조건에 맞는 주간 거래가 없습니다.</div>"
                 
+                # min-width: 650px 와 white-space: nowrap 을 적용하여 모바일 스와이프 활성화
                 html = f"""<div style="text-align:center; margin-top:20px; margin-bottom:10px;">
 <span style="background-color:white; padding:0 15px; font-weight:bold; font-size:12pt; color:{title_color}; position:relative; z-index:2;">━━━ {title} ━━━</span>
 </div>
-<table class="highlight-table">
+<div class='scroll-container' style='width: 100%; overflow-x: auto; padding-bottom: 10px;'>
+<table class="highlight-table" style="min-width: 650px; white-space: nowrap;">
 <tr>
 <th style="width:5%;">#</th>
 <th style="width:12%;">시군구</th>
@@ -402,7 +400,7 @@ if not df.empty:
 <td style="color:#64748b; font-size:8.5pt;">{date_str}</td>
 <td class="price-col">{item['가격']}</td>
 </tr>"""
-                html += "\n</table>"
+                html += "\n</table></div>"
                 return html
 
             st.markdown(make_highlight_table(new_highs, "신고가 주요거래", "#ef4444"), unsafe_allow_html=True)
@@ -471,7 +469,7 @@ if not df.empty:
                     st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최고가</p><h3 style='margin:4px 0; color:#ef4444; font-size:15pt;'>{max_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[max_idx, '거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
                     st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-bottom:8px; text-align:center;'><p style='margin:0; color:#64748b; font-size:10pt; font-weight:bold;'>역대 최저가</p><h3 style='margin:4px 0; color:#3b82f6; font-size:15pt;'>{min_price:,}만</h3><p style='margin:0; color:#94a3b8; font-size:9pt;'>{final_df.loc[min_idx, '거래일자'].strftime('%Y-%m-%d')}</p></div>", unsafe_allow_html=True)
                 
-                st.write("📈 시세 추이 및 거래량")
+                st.write("📈 시 추이 및 거래량")
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
                 fig.add_trace(go.Bar(x=monthly_stats['월텍스트'], y=monthly_stats['거래량'], name='월 거래량', marker_color='rgba(200, 220, 240, 0.6)'), secondary_y=True)
                 fig.add_trace(go.Scatter(x=final_df['월_한글텍스트'], y=final_df['거래금액(숫자)'], mode='markers', name='개별 실거래', marker=dict(size=7, color='rgba(135, 206, 250, 0.8)'), hovertemplate='금액: %{y}만원'), secondary_y=False)
