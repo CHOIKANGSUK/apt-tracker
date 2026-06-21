@@ -1,4 +1,4 @@
-iimport requests
+import requests
 import pandas as pd
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -6,45 +6,57 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import time
 
+# 국토부 실거래가 API 키
 API_KEY = "ff4474946de928765829a43d472cc18fbf5fd438b70cbdaf11c7768e5043c961"
 
-target_month = datetime.now().strftime("%Y%m")
+current_year = datetime.now().year
+current_month = datetime.now().month
 
-# 기존 관심 단지 + 서울 25개 구 랜드마크 통합 리스트
+# 2025년 1월부터 현재까지 타겟 설정
+target_months = []
+for m in range(1, 13):
+    target_months.append(f"2025{str(m).zfill(2)}")
+for m in range(1, current_month + 1):
+    target_months.append(f"{current_year}{str(m).zfill(2)}")
+
+# [핵심 패치 1] 국토부 이름 꼬임 방지를 위해 키워드를 극단적으로 단축 ('동' 제외, 핵심 키워드만)
 target_list = [
-    # --- 기존 강석님 관심 단지 ---
-    {"lawd_cd": "11260", "dong": "중화동", "keyword": "한신"},
-    {"lawd_cd": "11260", "dong": "상봉동", "keyword": "더샵"},
-    {"lawd_cd": "11230", "dong": "이문동", "keyword": "현대"},
-    {"lawd_cd": "11290", "dong": "상월곡동", "keyword": "동아에코빌"},
-    {"lawd_cd": "11230", "dong": "이문동", "keyword": "쌍용"},
+    {"lawd_cd": "11260", "dong": "중화", "keyword": "한신"},
+    {"lawd_cd": "11260", "dong": "상봉", "keyword": "더샵"},
+    {"lawd_cd": "11230", "dong": "이문", "keyword": "현대"},
+    {"lawd_cd": "11290", "dong": "상월곡", "keyword": "동아에코빌"},
+    {"lawd_cd": "11230", "dong": "이문", "keyword": "쌍용"},
+    {"lawd_cd": "11680", "dong": "대치", "keyword": "래미안대치"},
+    {"lawd_cd": "11650", "dong": "반포", "keyword": "아크로리버파크"},
+    {"lawd_cd": "11710", "dong": "잠실", "keyword": "리센츠"},
+    {"lawd_cd": "11170", "dong": "이촌", "keyword": "한가람"},
+    {"lawd_cd": "11590", "dong": "흑석", "keyword": "아크로리버하임"},
+    {"lawd_cd": "11110", "dong": "홍파", "keyword": "경희궁자이"},
+    {"lawd_cd": "11560", "dong": "당산", "keyword": "당산센트럴"},
+    {"lawd_cd": "11140", "dong": "만리", "keyword": "서울역센트럴"},
+    {"lawd_cd": "11215", "dong": "광장", "keyword": "광장힐스테이트"},
+    {"lawd_cd": "11440", "dong": "염리", "keyword": "마포프레스티지"},
+    {"lawd_cd": "11740", "dong": "둔촌", "keyword": "올림픽파크포레온"},
     
-    # --- 👑 서울 25개 구 랜드마크 아파트 타겟 ---
-    {"lawd_cd": "11680", "dong": "대치동", "keyword": "래미안대치팰리스"},   # 강남구
-    {"lawd_cd": "11650", "dong": "반포동", "keyword": "아크로리버파크"},     # 서초구
-    {"lawd_cd": "11710", "dong": "잠실동", "keyword": "리센츠"},           # 송파구
-    {"lawd_cd": "11170", "dong": "이촌동", "keyword": "한가람"},           # 용산구
-    {"lawd_cd": "11590", "dong": "흑석동", "keyword": "아크로리버하임"},     # 동작구
-    {"lawd_cd": "11110", "dong": "홍파동", "keyword": "경희궁자이"},         # 종로구
-    {"lawd_cd": "11560", "dong": "당산동", "keyword": "당산센트럴아이파크"},   # 영등포구
-    {"lawd_cd": "11140", "dong": "만리동", "keyword": "서울역센트럴자이"},     # 중구
-    {"lawd_cd": "11215", "dong": "광장동", "keyword": "광장힐스테이트"},     # 광진구
-    {"lawd_cd": "11440", "dong": "염리동", "keyword": "마포프레스티지자이"},   # 마포구
-    {"lawd_cd": "11740", "dong": "둔촌동", "keyword": "올림픽파크포레온"},   # 강동구
-    {"lawd_cd": "11200", "dong": "옥수동", "keyword": "래미안옥수리버젠"},     # 성동구
-    {"lawd_cd": "11470", "dong": "신정동", "keyword": "목동힐스테이트"},     # 양천구
-    {"lawd_cd": "11500", "dong": "마곡동", "keyword": "마곡엠밸리7단지"},     # 강서구
-    {"lawd_cd": "11410", "dong": "북아현동", "keyword": "e편한세상신촌"},      # 서대문구
-    {"lawd_cd": "11290", "dong": "길음동", "keyword": "래미안길음센터피스"},   # 성북구
-    {"lawd_cd": "11230", "dong": "전농동", "keyword": "SKY-L65"},        # 동대문구
-    {"lawd_cd": "11620", "dong": "봉천동", "keyword": "e편한세상서울대입구"},   # 관악구
-    {"lawd_cd": "11350", "dong": "중계동", "keyword": "청구3"},            # 노원구
-    {"lawd_cd": "11530", "dong": "신도림동", "keyword": "신도림4차"},          # 구로구
-    {"lawd_cd": "11260", "dong": "면목동", "keyword": "사가정센트럴아이파크"},   # 중랑구
-    {"lawd_cd": "11380", "dong": "응암동", "keyword": "녹번역e편한세상캐슬"},   # 은평구
-    {"lawd_cd": "11305", "dong": "미아동", "keyword": "북서울자이폴라리스"},   # 강북구
-    {"lawd_cd": "11545", "dong": "독산동", "keyword": "롯데캐슬골드파크3차"},   # 금천구
-    {"lawd_cd": "11320", "dong": "창동", "keyword": "북한산아이파크"}          # 도봉구
+    # 🔥 성동구 긴급 처방: '리버zen', '리버젠' 모두 잡히도록 '리버' 로 통일
+    {"lawd_cd": "11200", "dong": "옥수", "keyword": "리버"},      
+    
+    {"lawd_cd": "11470", "dong": "신정", "keyword": "목동힐스테이트"},
+    {"lawd_cd": "11500", "dong": "마곡", "keyword": "마곡엠밸리"},
+    {"lawd_cd": "11410", "dong": "북아현", "keyword": "e편한세상신촌"},
+    {"lawd_cd": "11290", "dong": "길음", "keyword": "래미안길음"},
+    {"lawd_cd": "11230", "dong": "전농", "keyword": "sky"},           
+    {"lawd_cd": "11620", "dong": "봉천", "keyword": "서울대입구"},
+    {"lawd_cd": "11350", "dong": "중계", "keyword": "청구3"},
+    
+    # 🔥 구로구 긴급 처방: '대림e-편한세상4' 등 하이픈 오류 극복을 위해 '4차' 로 통일
+    {"lawd_cd": "11530", "dong": "신도림", "keyword": "4차"},    
+    
+    {"lawd_cd": "11260", "dong": "면목", "keyword": "사가정센트럴"},
+    {"lawd_cd": "11380", "dong": "응암", "keyword": "녹번"},          
+    {"lawd_cd": "11305", "dong": "미아", "keyword": "북서울자이"},
+    {"lawd_cd": "11545", "dong": "독산", "keyword": "롯데캐슬골드파크3"},
+    {"lawd_cd": "11320", "dong": "창동", "keyword": "북한산아이파크"}
 ]
 
 def get_apt_transactions(lawd_cd, deal_ymd):
@@ -77,23 +89,35 @@ def get_apt_transactions(lawd_cd, deal_ymd):
 all_filtered_data = []
 unique_lawd_cds = set([target['lawd_cd'] for target in target_list])
 
-# 25개 자치구를 순회하며 데이터 수집
-for cd in unique_lawd_cds:
-    raw_data = get_apt_transactions(cd, target_month)
-    for target in target_list:
-        if target['lawd_cd'] == cd:
-            for item in raw_data:
-                # 대소문자 상관없이 영문 아파트 이름도 완벽 매칭되도록 .lower() 처리
-                if target['dong'] in item['법정동'] and target['keyword'].lower() in item['아파트명'].lower():
-                    all_filtered_data.append(item)
-    time.sleep(0.5) # 구글 API 서버에 부담을 주지 않기 위한 딜레이
+print("🚀 2025년 1월 ~ 현재 누락된 성동구/구로구 대장 아파트 정밀 스캔 시작...")
+
+for ym in target_months:
+    print(f"📅 데이터 스캔 중: {ym[0:4]}년 {ym[4:6]}월...")
+    for cd in unique_lawd_cds:
+        raw_data = get_apt_transactions(cd, ym)
+        for target in target_list:
+            if target['lawd_cd'] == cd:
+                for item in raw_data:
+                    # [핵심 패치 2] 데이터 파싱 시 하이픈(-)과 띄어쓰기를 완전히 박살 낸 후 검사
+                    fetched_dong = item.get('법정동', '').replace(" ", "")
+                    fetched_apt_clean = item.get('아파트명', '').replace(" ", "").replace("-", "").lower()
+                    
+                    target_keyword_clean = target['keyword'].replace(" ", "").replace("-", "").lower()
+                    
+                    # 동 이름이 포함되고, 키워드가 포함되어 있으면 무조건 수집
+                    if target['dong'] in fetched_dong and target_keyword_clean in fetched_apt_clean:
+                        all_filtered_data.append(item)
+        time.sleep(0.1)
+    time.sleep(1.0)
 
 if all_filtered_data:
+    # 구글 시트 연동 설정
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_name("secret.json", scope)
     gc = gspread.authorize(creds)
     worksheet = gc.open("도권_아파트_실거래가_트래킹").get_worksheet(0)
     
+    # 기존 데이터 중복 방지 로직
     existing_records = worksheet.get_all_records()
     existing_keys = set(
         f"{row.get('거래일자', '')}_{row.get('법정동', '')}_{row.get('아파트명', '')}_{row.get('전용면적(㎡)', '')}_{str(row.get('거래금액(만)', '')).replace(',', '')}"
@@ -108,8 +132,8 @@ if all_filtered_data:
             
     if rows_to_append:
         worksheet.append_rows(rows_to_append)
-        print(f"자동화 전송 완료: 랜드마크 포함 총 {len(rows_to_append)}건 추가됨!")
+        print(f"✨ 동기화 완료! 그동안 국토부 이름 꼬임으로 누락되었던 성동구, 구로구 포함 총 {len(rows_to_append)}건이 구글 시트에 추가되었습니다.")
     else:
-        print("오늘 기준 추가된 새로운 신고 내역이 없습니다.")
+        print("💡 이미 모든 실거래 데이터가 구글 시트에 들어있습니다.")
 else:
-    print("해당 월의 실거래 데이터가 없습니다.")
+    print("수집된 데이터가 없습니다.")
