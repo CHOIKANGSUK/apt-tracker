@@ -78,7 +78,7 @@ st.markdown("""
 
 # 구글 시트 데이터 로드 엔진 (10분 캐싱)
 @st.cache_data(ttl=600)
-def load_data_v6_29():
+def load_data_v6_30():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -171,7 +171,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_29()
+df = load_data_v6_30()
 
 if not df.empty:
     # 데이터 전처리
@@ -215,7 +215,7 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.29")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.30")
 
     # 4개의 완성형 탭 구조 선언
     main_tab0, main_tab_new, main_tab1, main_tab2 = st.tabs([
@@ -299,8 +299,8 @@ if not df.empty:
         landmark_df_84 = landmark_df[landmark_df['평형'].between(83, 85)]
         
         if not landmark_df_84.empty:
-            landmark_stats = landmark_df_84.groupby('월_날짜객체').agg({'get_price': ('거래금액(숫자)', 'mean')}).reset_index()
-            landmark_stats.columns = ['월_날짜객체', '거래금액']
+            # [🔥 핵심 오류 수정 완료] Pandas agg 딕셔너리 문법 오타 수정
+            landmark_stats = landmark_df_84.groupby('월_날짜객체').agg(거래금액=('거래금액(숫자)', 'mean')).reset_index()
             fig_idx = go.Figure()
             fig_idx.add_trace(go.Scatter(x=landmark_stats['월_날짜객체'], y=landmark_stats['거래금액'], mode='lines+markers', line=dict(color='#3b82f6', width=4), marker=dict(size=8, color='white', line=dict(width=2, color='#3b82f6')), name="서울 대장주 84㎡ 평균"))
             fig_idx.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=350, paper_bgcolor='white', plot_bgcolor='white', hovermode='x unified')
@@ -381,7 +381,6 @@ if not df.empty:
                 html += "</table>"
                 return html
 
-            # [핵심 수정] unsafe_allow_html=True 주입완료로 글자 깨짐 에러 현상 전면 진화
             st.markdown(make_highlight_table(new_highs, "신고가 주요거래", "#ef4444"), unsafe_allow_html=True)
             st.markdown(make_highlight_table(trades_84, "84㎡ 주요거래", "#334155"), unsafe_allow_html=True)
             st.markdown(make_highlight_table(trades_59, "59㎡ 주요거래", "#334155"), unsafe_allow_html=True)
@@ -477,7 +476,7 @@ if not df.empty:
         else:
             st.warning("데이터가 아직 수집되지 않았습니다.")
 
-    # ==================== TAB 3: 다중 단지 비교 평가 (칼럼 복구 완료) ====================
+    # ==================== TAB 3: 다중 단지 비교 평가 ====================
     with main_tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
         all_apts = sorted(df['단지선택명'].unique())
@@ -512,7 +511,6 @@ if not df.empty:
                 fig_comp.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=350, hovermode='x unified', paper_bgcolor='white', plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
                 st.plotly_chart(fig_comp, use_container_width=True)
 
-                # [요청사항 완벽 반영] 누락되었던 자치구(지역구), 구조(방/화) 완벽 백업 복구 완료 및 2026년 기준 실시간 연차 노출
                 st.write("📊 매칭 종합 요약 지표 (좌우 스크롤👉)")
                 summary_records = []
                 for label in sorted(comp_df['비교단지명'].unique()):
@@ -525,7 +523,6 @@ if not df.empty:
                         mn = unit_df['거래금액(숫자)'].min()
                         dr = ((recent - mx) / mx) * 100
                         
-                        # 2026년 연차 연산 자동화 디테일
                         built_str = apt_meta['준공']
                         age_text = ""
                         if built_str != "-" and "." in built_str:
