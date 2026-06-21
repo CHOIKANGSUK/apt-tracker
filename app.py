@@ -77,7 +77,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
-def load_data_v6_31():
+def load_data_v6_32():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -167,7 +167,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_31()
+df = load_data_v6_32()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -209,7 +209,7 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.31")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.32")
 
     main_tab0, main_tab_new, main_tab1, main_tab2 = st.tabs([
         "👑 서울 랜드마크 시세트래킹 지도", 
@@ -301,7 +301,7 @@ if not df.empty:
             fig_idx.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
             st.plotly_chart(fig_idx, use_container_width=True)
 
-    # ==================== TAB 1: 주간 실거래 하이라이트 (🔥 HTML 들여쓰기 오류 수정 완료) ====================
+    # ==================== TAB 1: 주간 실거래 하이라이트 (🔥 실거래일 및 차액 엔진 적용) ====================
     with main_tab_new:
         latest_date = df['거래일자'].max()
         week_ago = latest_date - timedelta(days=7)
@@ -313,17 +313,44 @@ if not df.empty:
         if recent_df.empty:
             st.info("최근 7일간 업데이트된 실거래 내역이 없습니다.")
         else:
+            # 1. 최신순으로 정렬 (날짜 내림차순, 같은 날짜면 금액 내림차순)
+            recent_df = recent_df.sort_values(by=['거래일자', '거래금액(숫자)'], ascending=[False, False])
+            
             new_highs = []
             trades_59 = []
             trades_84 = []
             
-            for idx, row in recent_df.sort_values(by='거래금액(숫자)', ascending=False).iterrows():
+            for idx, row in recent_df.iterrows():
                 apt_key = row['단지선택명']
                 pyung_key = row['평형']
                 price = row['거래금액(숫자)']
+                t_date = row['거래일자']
                 
-                all_time_max = max_prices.get((apt_key, pyung_key), price)
-                is_new_high = (price >= all_time_max)
+                # 2. 전 최고가 찾기 (현재 거래일자 '이전'의 데이터만 추출)
+                past_df = df[(df['단지선택명'] == apt_key) & (df['평형'] == pyung_key) & (df['거래일자'] < t_date)]
+                
+                is_new_high = False
+                diff_str = ""
+                
+                if not past_df.empty:
+                    prev_max = past_df['거래금액(숫자)'].max()
+                    # 이전 최고가보다 높은 경우에만 신고가로 판별하고 차액 계산
+                    if price > prev_max:
+                        is_new_high = True
+                        diff = price - prev_max
+                        
+                        eok = diff // 10000
+                        man = diff % 10000
+                        if eok > 0 and man > 0:
+                            diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{eok}억 {man:,}만원)</span>"
+                        elif eok > 0 and man == 0:
+                            diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{eok}억원)</span>"
+                        else:
+                            diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{man:,}만원)</span>"
+                else:
+                    # 과거 데이터가 아예 없는 경우 (첫 거래)
+                    is_new_high = True
+                    diff_str = ""
                 
                 apt_display_name = apt_key.split()[1] if len(apt_key.split())>1 else apt_key
                 
@@ -334,14 +361,15 @@ if not df.empty:
                     "층": f"{row['층']}층",
                     "가격": format_price(price),
                     "is_new_high": is_new_high,
-                    "date": row['거래일자']
+                    "diff_str": diff_str,
+                    "date": t_date
                 }
                 
                 if is_new_high: new_highs.append(trade_info)
                 if 58 <= pyung_key <= 60: trades_59.append(trade_info)
                 if 83 <= pyung_key <= 85: trades_84.append(trade_info)
                 
-            # [핵심 패치] HTML 코드 내부의 탭/스페이스바 들여쓰기를 제거하여 마크다운 코드블록 변환 에러 차단
+            # [핵심 패치] 실거래일 컬럼 추가 및 컬럼 간 넓이 비율 재조정
             def make_highlight_table(data_list, title, title_color="#ef4444"):
                 if not data_list: return f"<div style='text-align:center; color:#94a3b8; padding:20px; font-size:9.5pt;'>조건에 맞는 주간 거래가 없습니다.</div>"
                 
@@ -351,22 +379,27 @@ if not df.empty:
 <table class="highlight-table">
 <tr>
 <th style="width:5%;">#</th>
-<th style="width:15%;">시군구</th>
-<th style="width:35%; text-align:left;">아파트명</th>
-<th style="width:15%;">면적</th>
+<th style="width:12%;">시군구</th>
+<th style="width:33%; text-align:left;">아파트명</th>
+<th style="width:10%;">면적</th>
 <th style="width:10%;">층</th>
-<th style="width:20%; text-align:right; padding-right:15px;">가격</th>
+<th style="width:12%;">실거래일</th>
+<th style="width:18%; text-align:right; padding-right:15px;">가격</th>
 </tr>"""
                 
                 for i, item in enumerate(data_list[:15]):
                     badge = "<span class='badge-new-high'>신고가</span>" if item['is_new_high'] else ""
+                    d_str = item['diff_str']
+                    date_str = item['date'].strftime('%y.%m.%d')
+                    
                     html += f"""
 <tr>
 <td style="color:#94a3b8; font-weight:bold;">{i+1}</td>
 <td>{item['시군구']}</td>
-<td style="text-align:left; font-weight:bold;">{item['아파트명']} {badge}</td>
+<td style="text-align:left; font-weight:bold;">{item['아파트명']} {badge}{d_str}</td>
 <td>{item['면적']}</td>
 <td>{item['층']}</td>
+<td style="color:#64748b; font-size:8.5pt;">{date_str}</td>
 <td class="price-col">{item['가격']}</td>
 </tr>"""
                 html += "\n</table>"
