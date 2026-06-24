@@ -85,7 +85,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
-def load_data_v6_35():
+def load_data_v6_36():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -100,6 +100,14 @@ def load_data_v6_35():
         df = pd.DataFrame(data)
         
         df['거래일자'] = pd.to_datetime(df['거래일자'])
+        
+        # [핵심 패치] 신설된 수집일자 열을 날짜 객체로 변환 (과거 데이터 비어있으면 거래일자로 대체 방어막 구축)
+        if '수집일자' in df.columns:
+            df['수집일자'] = pd.to_datetime(df['수집일자'].astype(str).str.strip(), errors='coerce')
+            df['수집일자'] = df['수집일자'].fillna(df['거래일자'])
+        else:
+            df['수집일자'] = df['거래일자']
+            
         df = df.sort_values(by='거래일자', ascending=True)
         return df
     except Exception as e:
@@ -140,7 +148,7 @@ def format_price(price_man):
     if price % 10000 == 0: return f"{price // 10000}억"
     else: return f"{price // 10000}억 {(price % 10000):,}만"
 
-# [비밀 사전] 입지 평가 마스터 데이터 (예산별 랭킹 탭에서 활용)
+# 입지 마스터 데이터
 APT_VALUE_MAP = {
     "리센츠": {"입지점수": 98, "지형": "평지", "학군": "S(잠신초중고)", "교통": "2호선 초역세권"},
     "래미안대치팰리스": {"입지점수": 99, "지형": "평지", "학군": "S(대치동학원가)", "교통": "3호선/수인분당"},
@@ -188,7 +196,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_35()
+df = load_data_v6_36()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -205,7 +213,7 @@ if not df.empty:
         "은평구": "녹번역", "서대문구": "e편한세상신촌", "종로구": "경희궁자이", "동대문구": "sky",
         "중랑구": "사가정센트럴", "마포구": "마포프레스티지", "용산구": "한가람", "중구": "서울역센트럴",
         "성동구": "래미안옥수", "광진구": "광장힐스테이트", "강동구": "올림픽파크포레온", "강서구": "마곡엠밸리7",
-        "양천구": "목동힐스테이트", "영등포구": "당산센트럴", "동작구": "아크로리버하임", "서초구": "아크로리버파크",
+        "양천구": "목동힐스테이트", "영등포구": "당산센트럴", "동작구": "아크ro리버하임", "서초구": "아크로리버파크",
         "강남구": "래미안대치팰리스", "송파구": "리센츠", "구로구": "신도림4차", "금천구": "롯데캐슬골드파크3",
         "관악구": "서울대입구"
     }
@@ -230,12 +238,10 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.35")
-
-    # 5개의 탭 선언 (생략 없이 전부 살려냄)
+    # 5개의 완성형 탭 구조 선언
     main_tab0, main_tab_new, main_tab_budget, main_tab1, main_tab2 = st.tabs([
-        "👑 시세트래킹 지도", 
-        "🚨 주간 하이라이트", 
+        "👑 서울 랜드마크 시세트래킹 지도", 
+        "🚨 주간 실거래 하이라이트", 
         "💰 예산별 가성비 비교", 
         "📊 단지별 분석", 
         "⚖️ 단지간 비교"
@@ -324,18 +330,22 @@ if not df.empty:
             fig_idx.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
             st.plotly_chart(fig_idx, use_container_width=True)
 
-    # ==================== TAB 1: 주간 실거래 하이라이트 (최신순, 날짜 표기, 차액) ====================
+    # ==================== TAB 1: 주간 실거래 하이라이트 (🔥 수집일자(신고일) 기준으로 누락 원천 차단) ====================
     with main_tab_new:
-        latest_date = df['거래일자'].max()
-        week_ago = latest_date - timedelta(days=7)
+        # 계약일이 아닌 파이썬이 데이터를 확보한 최신 '수집일자' 기준으로 7일을 끊습니다.
+        latest_collect_date = df['수집일자'].max()
+        week_ago_collect = latest_collect_date - timedelta(days=7)
         
-        st.markdown(f"<h2>🚨 서울 랜드마크 주간 주요거래 <span style='font-size:12pt; color:#64748b; font-weight:normal;'>({week_ago.strftime('%m/%d')} ~ {latest_date.strftime('%m/%d')} 기준)</span></h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2>🚨 서울 랜드마크 주간 주요거래 <span style='font-size:12pt; color:#64748b; font-weight:normal;'>({week_ago_collect.strftime('%m/%d')} ~ {latest_collect_date.strftime('%m/%d')} 등록분)</span></h2>", unsafe_allow_html=True)
+        st.caption("※ 국토부에 지난 일주일간 '새롭게 접수(신고)'된 실거래 리스트입니다. 계약일이 예전이더라도 누락 없이 모두 포착합니다.")
         
-        recent_df = df[df['거래일자'] >= week_ago].copy()
+        # 실제 계약일이 아닌 수집일자 기준으로 필터링하여 지각 신고 데이터 구출
+        recent_df = df[df['수집일자'] >= week_ago_collect].copy()
         
         if recent_df.empty:
-            st.info("최근 7일간 업데이트된 실거래 내역이 없습니다.")
+            st.info("최근 7일간 국토부에 새로 등록된 실거래 내역이 없습니다.")
         else:
+            # 표 내부 정렬은 여전히 실제 계약일(거래일자) 기준 최신순으로 정렬
             recent_df = recent_df.sort_values(by=['거래일자', '거래금액(숫자)'], ascending=[False, False])
             
             new_highs = []
@@ -348,6 +358,7 @@ if not df.empty:
                 price = row['거래금액(숫자)']
                 t_date = row['거래일자']
                 
+                # 과거 역대 전 최고가 찾기 (현재 계약일보다 이전 데이터 기준)
                 past_df = df[(df['단지선택명'] == apt_key) & (df['평형'] == pyung_key) & (df['거래일자'] < t_date)]
                 
                 is_new_high = False
@@ -440,7 +451,7 @@ if not df.empty:
             gu_html += "</div>"
             st.markdown(gu_html, unsafe_allow_html=True)
 
-    # ==================== [신규 추가] TAB 2: 예산별 가성비 비교 ====================
+    # ==================== TAB 2: 예산별 가성비 비교 ====================
     with main_tab_budget:
         st.subheader("💰 내 예산에 맞는 최적의 대장주 찾기")
         st.caption("최근 3개월간의 실거래가 평균액을 기준으로 예산대별 단지를 추천합니다.")
@@ -478,7 +489,6 @@ if not df.empty:
             results = []
             for _, row in budget_rank.iterrows():
                 apt_nm = row['아파트명']
-                # 딕셔너리에서 입지 정보 검색
                 info = next((v for k, v in APT_VALUE_MAP.items() if k in apt_nm), {"입지점수": 0, "지형": "-", "학군": "-", "교통": "-"})
                 
                 results.append({
@@ -591,7 +601,7 @@ if not df.empty:
         else:
             st.warning("데이터가 아직 수집되지 않았습니다.")
 
-    # ==================== TAB 4: 다중 단지 비교 평가 ====================
+    # ==================== TAB 4: 단지간 비교 평가 ====================
     with main_tab2:
         st.subheader("⚖️ 단지별 시세 흐름 다중 비교 분석")
         all_apts = sorted(df['단지선택명'].unique())
