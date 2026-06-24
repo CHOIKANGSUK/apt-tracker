@@ -85,7 +85,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
-def load_data_v6_36():
+def load_data_v6_38():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -101,7 +101,7 @@ def load_data_v6_36():
         
         df['거래일자'] = pd.to_datetime(df['거래일자'])
         
-        # [핵심 패치] 신설된 수집일자 열을 날짜 객체로 변환 (과거 데이터 비어있으면 거래일자로 대체 방어막 구축)
+        # 수집일자 열 날짜 변환 및 예외 처리
         if '수집일자' in df.columns:
             df['수집일자'] = pd.to_datetime(df['수집일자'].astype(str).str.strip(), errors='coerce')
             df['수집일자'] = df['수집일자'].fillna(df['거래일자'])
@@ -196,7 +196,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_36()
+df = load_data_v6_38()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -213,7 +213,7 @@ if not df.empty:
         "은평구": "녹번역", "서대문구": "e편한세상신촌", "종로구": "경희궁자이", "동대문구": "sky",
         "중랑구": "사가정센트럴", "마포구": "마포프레스티지", "용산구": "한가람", "중구": "서울역센트럴",
         "성동구": "래미안옥수", "광진구": "광장힐스테이트", "강동구": "올림픽파크포레온", "강서구": "마곡엠밸리7",
-        "양천구": "목동힐스테이트", "영등포구": "당산센트럴", "동작구": "아크ro리버하임", "서초구": "아크로리버파크",
+        "양천구": "목동힐스테이트", "영등포구": "당산센트럴", "동작구": "아크로리버하임", "서초구": "아크로리버파크",
         "강남구": "래미안대치팰리스", "송파구": "리센츠", "구로구": "신도림4차", "금천구": "롯데캐슬골드파크3",
         "관악구": "서울대입구"
     }
@@ -238,13 +238,14 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    # 5개의 완성형 탭 구조 선언
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.38")
+
     main_tab0, main_tab_new, main_tab_budget, main_tab1, main_tab2 = st.tabs([
-        "👑 서울 랜드마크 시세트래킹 지도", 
-        "🚨 주간 실거래 하이라이트", 
-        "💰 예산별 가성비 비교", 
-        "📊 단지별 분석", 
-        "⚖️ 단지간 비교"
+        "👑 시세트래킹 지도", 
+        "🚨 주간 하이라이트", 
+        "💰 가성비 비교", 
+        "📊 단지 분석", 
+        "⚖️ 비교 평가"
     ])
 
     # ==================== TAB 0: 모바일 스와이프 최적화 지도 ====================
@@ -254,7 +255,7 @@ if not df.empty:
         reversed_month_options = month_options[::-1]
         
         st.subheader("🗺️ 서울 랜드마크 시세트래킹 지도")
-        st.caption("각 자치구 대장주의 **'국민평형(84㎡)'** 월간 평균 실거래 금액 스냅샷입니다. (모바일에서는 지도를 좌우로 밀어서 보세요👉)")
+        st.caption("각 자치구 대장주의 **'국민평형(84㎡)'** 월간 평균 실거래 금액 스냅샷입니다.")
         
         col1, col2 = st.columns([1, 1])
         with col1:
@@ -290,15 +291,12 @@ if not df.empty:
 
         html_map = "<div class='scroll-container' style='width: 100%; overflow-x: auto; white-space: nowrap; padding-bottom: 10px;'>"
         html_map += "<div style='display: grid; grid-template-columns: repeat(8, minmax(100px, 1fr)); gap: 6px; background-color: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; min-width: 850px;'>"
-        
         for row in map_grid:
             if row == ["한강_SPAN"]:
                 html_map += "<div style='grid-column: 1 / -1; height: 38px; background: linear-gradient(90deg, #60a5fa, #2563eb, #60a5fa); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 10pt; font-weight: bold; letter-spacing: 15px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);'>HAN RIVER</div>"
                 continue
-            
             for loc in row:
-                if loc is None:
-                    html_map += "<div style='height: 90px;'></div>"
+                if loc is None: html_map += "<div style='height: 90px;'></div>"
                 else:
                     data = processed_prices.get(loc, {"price": "-", "name": "미수집", "active": False})
                     bg = "background-color: white; border: 1px solid #cbd5e1; box-shadow: 1px 2px 4px rgba(0,0,0,0.08);" if data['active'] else "background-color: #f1f5f9; border: 1px solid #e2e8f0; opacity: 0.5;"
@@ -306,17 +304,12 @@ if not df.empty:
                     text_weight = "font-weight: 800;" if data['active'] else "font-weight: normal;"
                     t_bg = "background-color: #facc15; color: #1e293b;" if data['active'] else "background-color: #e2e8f0; color: #94a3b8;"
                     
-                    html_map += f"<div style='{bg} border-radius: 6px; height: 90px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center; white-space: normal;'>\
-                                    <div style='{t_bg} font-size: 8.5pt; font-weight: bold; padding: 4px 0;'>{loc}</div>\
-                                    <div style='font-size: 7.5pt; color: #475569; padding: 2px 4px; line-height: 1.2; word-break: break-word; flex-grow: 1; display: flex; align-items: center; justify-content: center;'>{data['name']}</div>\
-                                    <div style='font-size: 13pt; {text_weight} color: {text_c}; padding-bottom: 4px;'>{data['price']}</div>\
-                                 </div>"
+                    html_map += f"<div style='{bg} border-radius: 6px; height: 90px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: center; white-space: normal;'><div style='{t_bg} font-size: 8.5pt; font-weight: bold; padding: 4px 0;'>{loc}</div><div style='font-size: 7.5pt; color: #475569; padding: 2px 4px; line-height: 1.2; word-break: break-word; flex-grow: 1; display: flex; align-items: center; justify-content: center;'>{data['name']}</div><div style='font-size: 13pt; {text_weight} color: {text_c}; padding-bottom: 4px;'>{data['price']}</div></div>"
         html_map += "</div></div>"
         st.markdown(html_map, unsafe_allow_html=True)
 
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.subheader("📈 서울 랜드마크 84㎡ 종합 지수 추이")
-        
         landmark_df = df[df['is_landmark'] == True].copy()
         landmark_df_84 = landmark_df[landmark_df['평형'].between(83, 85)]
         
@@ -330,27 +323,44 @@ if not df.empty:
             fig_idx.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
             st.plotly_chart(fig_idx, use_container_width=True)
 
-    # ==================== TAB 1: 주간 실거래 하이라이트 (🔥 수집일자(신고일) 기준으로 누락 원천 차단) ====================
+    # ==================== TAB 1: 주간 실거래 하이라이트 (🔥 실까 스타일 일자별 드롭다운 필터 적용) ====================
     with main_tab_new:
-        # 계약일이 아닌 파이썬이 데이터를 확보한 최신 '수집일자' 기준으로 7일을 끊습니다.
-        latest_collect_date = df['수집일자'].max()
-        week_ago_collect = latest_collect_date - timedelta(days=7)
+        st.markdown("<h2>🚨 서울 랜드마크 주간 실거래 하이라이트</h2>", unsafe_allow_html=True)
         
-        st.markdown(f"<h2>🚨 서울 랜드마크 주간 주요거래 <span style='font-size:12pt; color:#64748b; font-weight:normal;'>({week_ago_collect.strftime('%m/%d')} ~ {latest_collect_date.strftime('%m/%d')} 등록분)</span></h2>", unsafe_allow_html=True)
-        st.caption("※ 국토부에 지난 일주일간 '새롭게 접수(신고)'된 실거래 리스트입니다. 계약일이 예전이더라도 누락 없이 모두 포착합니다.")
+        # 1. 수집일자 목록 추출 (가장 최신순으로 30개까지만 노출)
+        unique_dates = sorted(df['수집일자'].dropna().dt.date.unique(), reverse=True)[:30]
         
-        # 실제 계약일이 아닌 수집일자 기준으로 필터링하여 지각 신고 데이터 구출
-        recent_df = df[df['수집일자'] >= week_ago_collect].copy()
+        def format_korean_date(d):
+            weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+            today = datetime.now().date()
+            base_str = f"{d.month}.{d.day}({weekdays[d.weekday()]})"
+            if d == today: return f"🗓️ {base_str} 오늘 공개분"
+            return f"🗓️ {base_str} 공개분"
+
+        # 2. 드롭다운 메뉴용 딕셔너리 생성 (하이브리드 기본값 탑재)
+        date_options = {"🌟 최근 7일 통합 보기 (기본값)": "7days"}
+        for d in unique_dates:
+            date_options[format_korean_date(d)] = d
+            
+        chosen_date_str = st.selectbox("📅 스캔할 국토부 공개(수집) 일자 선택", list(date_options.keys()), index=0)
+        target_val = date_options[chosen_date_str]
         
-        if recent_df.empty:
-            st.info("최근 7일간 국토부에 새로 등록된 실거래 내역이 없습니다.")
+        # 3. 선택값에 따른 동적 필터링
+        if target_val == "7days":
+            latest_date = df['수집일자'].max()
+            filter_start = latest_date - timedelta(days=7)
+            recent_df = df[df['수집일자'] >= filter_start].copy()
+            st.caption(f"**조회 기준:** 최근 7일간 ({filter_start.strftime('%m/%d')} ~ {latest_date.strftime('%m/%d')}) 국토부에 새롭게 등록된 실거래 통합본")
         else:
-            # 표 내부 정렬은 여전히 실제 계약일(거래일자) 기준 최신순으로 정렬
+            recent_df = df[df['수집일자'].dt.date == target_val].copy()
+            st.caption(f"**조회 기준:** {target_val.strftime('%Y년 %m월 %d일')} 당일 국토부에 신규 공개된 실거래 내역 리스트")
+
+        if recent_df.empty:
+            st.info("선택하신 기간 내에 새롭게 수집된 실거래 내역이 없습니다.")
+        else:
             recent_df = recent_df.sort_values(by=['거래일자', '거래금액(숫자)'], ascending=[False, False])
             
-            new_highs = []
-            trades_59 = []
-            trades_84 = []
+            new_highs, trades_59, trades_84 = [], [], []
             
             for idx, row in recent_df.iterrows():
                 apt_key = row['단지선택명']
@@ -358,7 +368,7 @@ if not df.empty:
                 price = row['거래금액(숫자)']
                 t_date = row['거래일자']
                 
-                # 과거 역대 전 최고가 찾기 (현재 계약일보다 이전 데이터 기준)
+                # 역대 최고가 추적 (현재 거래보다 과거)
                 past_df = df[(df['단지선택명'] == apt_key) & (df['평형'] == pyung_key) & (df['거래일자'] < t_date)]
                 
                 is_new_high = False
@@ -369,30 +379,19 @@ if not df.empty:
                     if price > prev_max:
                         is_new_high = True
                         diff = price - prev_max
-                        
-                        eok = diff // 10000
-                        man = diff % 10000
-                        if eok > 0 and man > 0:
-                            diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{eok}억 {man:,}만원)</span>"
-                        elif eok > 0 and man == 0:
-                            diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{eok}억원)</span>"
-                        else:
-                            diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{man:,}만원)</span>"
+                        eok, man = diff // 10000, diff % 10000
+                        if eok > 0 and man > 0: diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{eok}억 {man:,}만원)</span>"
+                        elif eok > 0 and man == 0: diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{eok}억원)</span>"
+                        else: diff_str = f" <span style='color:#ef4444; font-size:8.5pt;'>(▲{man:,}만원)</span>"
                 else:
                     is_new_high = True
                     diff_str = ""
                 
                 apt_display_name = apt_key.split()[1] if len(apt_key.split())>1 else apt_key
-                
                 trade_info = {
-                    "시군구": row['자치구'],
-                    "아파트명": apt_display_name,
-                    "면적": f"{pyung_key}㎡",
-                    "층": f"{row['층']}층",
-                    "가격": format_price(price),
-                    "is_new_high": is_new_high,
-                    "diff_str": diff_str,
-                    "date": t_date
+                    "시군구": row['자치구'], "아파트명": apt_display_name, "면적": f"{pyung_key}㎡",
+                    "층": f"{row['층']}층", "가격": format_price(price), "is_new_high": is_new_high,
+                    "diff_str": diff_str, "date": t_date
                 }
                 
                 if is_new_high: new_highs.append(trade_info)
@@ -400,37 +399,21 @@ if not df.empty:
                 if 83 <= pyung_key <= 85: trades_84.append(trade_info)
                 
             def make_highlight_table(data_list, title, title_color="#ef4444"):
-                if not data_list: return f"<div style='text-align:center; color:#94a3b8; padding:20px; font-size:9.5pt;'>조건에 맞는 주간 거래가 없습니다.</div>"
-                
+                if not data_list: return f"<div style='text-align:center; color:#94a3b8; padding:20px; font-size:9.5pt;'>조건에 맞는 거래가 없습니다.</div>"
                 html = f"""<div style="text-align:center; margin-top:20px; margin-bottom:10px;">
 <span style="background-color:white; padding:0 15px; font-weight:bold; font-size:12pt; color:{title_color}; position:relative; z-index:2;">━━━ {title} ━━━</span>
 </div>
 <div class='scroll-container' style='width: 100%; overflow-x: auto; padding-bottom: 10px;'>
 <table class="highlight-table" style="min-width: 650px; white-space: nowrap;">
 <tr>
-<th style="width:5%;">#</th>
-<th style="width:12%;">시군구</th>
-<th style="width:33%; text-align:left;">아파트명</th>
-<th style="width:10%;">면적</th>
-<th style="width:10%;">층</th>
-<th style="width:12%;">실거래일</th>
-<th style="width:18%; text-align:right; padding-right:15px;">가격</th>
+<th style="width:5%;">#</th><th style="width:12%;">시군구</th><th style="width:33%; text-align:left;">아파트명</th>
+<th style="width:10%;">면적</th><th style="width:10%;">층</th><th style="width:12%;">계약일</th><th style="width:18%; text-align:right; padding-right:15px;">가격</th>
 </tr>"""
                 for i, item in enumerate(data_list[:15]):
                     badge = "<span class='badge-new-high'>신고가</span>" if item['is_new_high'] else ""
                     d_str = item['diff_str']
                     date_str = item['date'].strftime('%y.%m.%d')
-                    
-                    html += f"""
-<tr>
-<td style="color:#94a3b8; font-weight:bold;">{i+1}</td>
-<td>{item['시군구']}</td>
-<td style="text-align:left; font-weight:bold;">{item['아파트명']} {badge}{d_str}</td>
-<td>{item['면적']}</td>
-<td>{item['층']}</td>
-<td style="color:#64748b; font-size:8.5pt;">{date_str}</td>
-<td class="price-col">{item['가격']}</td>
-</tr>"""
+                    html += f"<tr><td style='color:#94a3b8; font-weight:bold;'>{i+1}</td><td>{item['시군구']}</td><td style='text-align:left; font-weight:bold;'>{item['아파트명']} {badge}{d_str}</td><td>{item['면적']}</td><td>{item['층']}</td><td style='color:#64748b; font-size:8.5pt;'>{date_str}</td><td class='price-col'>{item['가격']}</td></tr>"
                 html += "\n</table></div>"
                 return html
 
@@ -441,10 +424,8 @@ if not df.empty:
             st.markdown("""<div style="text-align:center; margin-top:30px; margin-bottom:10px;">
 <span style="background-color:white; padding:0 15px; font-weight:bold; font-size:12pt; color:#3b82f6; position:relative; z-index:2;">━━━ 시군구별 거래 현황 ━━━</span>
 </div>""", unsafe_allow_html=True)
-            
             gu_counts = recent_df['자치구'].value_counts().reset_index()
             gu_counts.columns = ['자치구', '거래건수']
-            
             gu_html = "<div style='display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-bottom:30px;'>"
             for _, row in gu_counts.iterrows():
                 gu_html += f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:8px 15px; border-radius:20px; font-size:9pt;'><span style='color:#64748b;'>{row['자치구']}</span> <span style='font-weight:bold; color:#1e3a8a;'>{row['거래건수']}건</span></div>"
@@ -457,25 +438,17 @@ if not df.empty:
         st.caption("최근 3개월간의 실거래가 평균액을 기준으로 예산대별 단지를 추천합니다.")
         
         budget_options = {
-            "4억~6억": (40000, 60000),
-            "6억~8억": (60000, 80000),
-            "8억~10억": (80000, 100000),
-            "10억~13억": (100000, 130000),
-            "13억~16억": (130000, 160000),
-            "16억~20억": (160000, 200000),
-            "20억 이상": (200000, 999999)
+            "4억~6억": (40000, 60000), "6억~8억": (60000, 80000), "8억~10억": (80000, 100000),
+            "10억~13억": (100000, 130000), "13억~16억": (130000, 160000),
+            "16억~20억": (160000, 200000), "20억 이상": (200000, 999999)
         }
         
         col_b1, col_b2 = st.columns([1, 1])
-        with col_b1:
-            chosen_budget = st.selectbox("💵 가용 예산 범위를 선택하세요", list(budget_options.keys()), index=2)
-        with col_b2:
-            chosen_pyung_type = st.radio("🏠 평형 타입", ["전체", "59㎡(25평)", "84㎡(34평)"], horizontal=True)
+        with col_b1: chosen_budget = st.selectbox("💵 가용 예산 범위를 선택하세요", list(budget_options.keys()), index=2)
+        with col_b2: chosen_pyung_type = st.radio("🏠 평형 타입", ["전체", "59㎡(25평)", "84㎡(34평)"], horizontal=True)
 
         min_b, max_b = budget_options[chosen_budget]
-        
-        three_months_ago = datetime.now() - timedelta(days=90)
-        b_df = df[df['거래일자'] >= three_months_ago].copy()
+        b_df = df[df['거래일자'] >= datetime.now() - timedelta(days=90)].copy()
         
         if "59㎡" in chosen_pyung_type: b_df = b_df[b_df['평형'].between(58, 61)]
         elif "84㎡" in chosen_pyung_type: b_df = b_df[b_df['평형'].between(83, 85)]
@@ -490,17 +463,10 @@ if not df.empty:
             for _, row in budget_rank.iterrows():
                 apt_nm = row['아파트명']
                 info = next((v for k, v in APT_VALUE_MAP.items() if k in apt_nm), {"입지점수": 0, "지형": "-", "학군": "-", "교통": "-"})
-                
                 results.append({
-                    "지역": row['자치구'],
-                    "아파트명": apt_nm,
-                    "평형": f"{row['평형']}㎡",
-                    "평균 실거래": format_price(row['거래금액(숫자)']),
-                    "입지점수": info['입지점수'],
-                    "지형": info['지형'],
-                    "학군": info['학군'],
-                    "교통": info['교통'],
-                    "score": info['입지점수']
+                    "지역": row['자치구'], "아파트명": apt_nm, "평형": f"{row['평형']}㎡",
+                    "평균 실거래": format_price(row['거래금액(숫자)']), "입지점수": info['입지점수'],
+                    "지형": info['지형'], "학군": info['학군'], "교통": info['교통'], "score": info['입지점수']
                 })
             
             results_df = pd.DataFrame(results).sort_values(by='score', ascending=False)
@@ -511,16 +477,7 @@ if not df.empty:
             
             for i, res in enumerate(results_df.to_dict('records')):
                 medal = "🥇" if i==0 else ("🥈" if i==1 else ("🥉" if i==2 else i+1))
-                html += f"""<tr>
-                <td style='font-weight:bold;'>{medal}</td>
-                <td>{res['지역']}</td>
-                <td style='text-align:left; font-weight:bold;'>{res['아파트명']} <br><span style='font-size:8pt; color:#94a3b8; font-weight:normal;'>{res['교통']}</span></td>
-                <td>{res['평형']}</td>
-                <td style='color:#ef4444; font-weight:bold;'>{res['평균 실거래']}</td>
-                <td><span class='score-badge'>{res['입지점수']}점</span></td>
-                <td>{res['지형']}</td>
-                <td>{res['학군']}</td>
-                </tr>"""
+                html += f"<tr><td style='font-weight:bold;'>{medal}</td><td>{res['지역']}</td><td style='text-align:left; font-weight:bold;'>{res['아파트명']} <br><span style='font-size:8pt; color:#94a3b8; font-weight:normal;'>{res['교통']}</span></td><td>{res['평형']}</td><td style='color:#ef4444; font-weight:bold;'>{res['평균 실거래']}</td><td><span class='score-badge'>{res['입지점수']}점</span></td><td>{res['지형']}</td><td>{res['학군']}</td></tr>"
             html += "</table></div>"
             st.markdown(html, unsafe_allow_html=True)
             st.caption("※ 입지점수는 강석 아파트 연구소의 자체 기준(교통+학군+환경)에 의해 산정되었습니다.")
