@@ -14,9 +14,19 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# [전역 패치] 모바일 최적화 및 드롭다운/테이블 디자인 CSS
+# [전역 패치] 모바일 가독성 최적화 및 실까 스타일 폰트 렌더링 극대화 CSS
 st.markdown("""
 <style>
+    /* Noto Sans KR 폰트 임포트 */
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;900&display=swap');
+
+    /* 전체 앱에 폰트 및 안티앨리어싱(글씨 부드럽게/선명하게) 강제 적용 */
+    html, body, [class*="st-"], .stApp, div[data-baseweb="popover"], ul[role="listbox"] {
+        font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+        -webkit-font-smoothing: antialiased !important;
+        -moz-osx-font-smoothing: grayscale !important;
+    }
+
     @media (max-width: 768px) {
         h1 { font-size: 1.5rem !important; }
         h2 { font-size: 1.3rem !important; }
@@ -34,21 +44,27 @@ st.markdown("""
         scrollbar-width: none;
     }
     
-    /* 🌟 핵심 패치: 클릭 시 열리는 '드롭다운 목록' 글씨 선명도 극대화 🌟 */
+    /* 🌟 핵심 패치: 선택창과 드롭다운 목록의 폰트 및 두께 완벽 통일 🌟 */
+    /* 선택된 박스 안의 글자 */
+    div[data-baseweb="select"] > div {
+        font-weight: 600 !important; 
+        color: #0f172a !important; 
+    }
+    /* 드롭다운 목록(Popover) 안의 글자 */
     div[data-baseweb="popover"] li[role="option"],
     div[data-baseweb="popover"] li[role="option"] span,
     div[data-baseweb="popover"] li[role="option"] div {
-        color: #111827 !important; /* 완전 진한 검남색으로 변경 */
-        font-weight: 600 !important; /* 글씨 두께를 굵게 변경하여 뿌연 현상 제거 */
-        font-size: 15px !important; /* 글씨 크기 약간 확대 */
+        color: #111827 !important; 
+        font-weight: 600 !important; /* 선택창과 동일한 굵기 */
+        font-size: 15px !important; 
+        letter-spacing: -0.01em !important; /* 자간을 살짝 좁혀 더 단단해 보이게 */
     }
-    
-    /* 목록에 마우스를 올렸을 때 배경색 조금 더 선명하게 */
+    /* 목록에 마우스를 올렸을 때 */
     div[data-baseweb="popover"] li[role="option"]:hover {
         background-color: #f1f5f9 !important; 
     }
 
-    /* 멀티셀렉트 선택된 '태그' 박스 디자인 (빨간색 대신 눈 편한 스카이블루) */
+    /* 멀티셀렉트 선택된 '태그' 박스 디자인 */
     span[data-baseweb="tag"] {
         background-color: #e0f2fe !important;
         color: #0369a1 !important;
@@ -60,7 +76,6 @@ st.markdown("""
     .highlight-table {
         width: 100%;
         border-collapse: collapse;
-        font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
         font-size: 9.5pt;
         margin-bottom: 30px;
     }
@@ -107,7 +122,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
-def load_data_v6_41():
+def load_data_v6_42():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -217,7 +232,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_41()
+df = load_data_v6_42()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -259,7 +274,7 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.41")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.42")
 
     main_tab0, main_tab_new, main_tab_budget, main_tab1, main_tab2 = st.tabs([
         "🗺️ 시세트래킹 지도", 
