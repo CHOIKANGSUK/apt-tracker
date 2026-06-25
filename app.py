@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# [전역 패치] 모바일 가독성 최적화 및 실까 스타일 테이블 전역 CSS 추가 (밝은 테마)
+# [전역 패치] 모바일 가독성 최적화 및 드롭다운 가독성 극대화 CSS
 st.markdown("""
 <style>
     @media (max-width: 768px) {
@@ -34,6 +34,24 @@ st.markdown("""
         scrollbar-width: none;
     }
     
+    /* 🌟 드롭다운 메뉴 및 텍스트 가독성(선명도) 극대화 패치 🌟 */
+    div[data-baseweb="select"] > div {
+        font-weight: 600 !important; /* 선택된 글자 굵게 */
+        color: #0f172a !important; /* 완전 진한 색으로 대비 높임 */
+    }
+    ul[role="listbox"] li {
+        font-weight: 600 !important; /* 드롭다운 목록 글자 굵게 */
+        color: #1e293b !important; /* 목록 글자 진하게 */
+        font-size: 0.9rem !important;
+    }
+    /* 멀티셀렉트 태그(선택된 항목) 색상 눈 편안하게 변경 */
+    span[data-baseweb="tag"] {
+        background-color: #e0f2fe !important;
+        color: #0369a1 !important;
+        border: 1px solid #7dd3fc !important;
+        font-weight: 700 !important;
+    }
+
     /* 실까 스타일 테이블 상세 CSS 디자인 */
     .highlight-table {
         width: 100%;
@@ -85,7 +103,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
-def load_data_v6_39():
+def load_data_v6_40():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -195,7 +213,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_39()
+df = load_data_v6_40()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -237,10 +255,8 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    # [수정] 메인 타이틀 아이콘 반영 (건물 아이콘 🏢)
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.39")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.40")
 
-    # [수정] 탭 아이콘 전면 교체 (지도 🗺️, 타겟 🎯, 돈가방 💰, 차트 📊, 저울 ⚖️)
     main_tab0, main_tab_new, main_tab_budget, main_tab1, main_tab2 = st.tabs([
         "🗺️ 시세트래킹 지도", 
         "🎯 주간 하이라이트", 
@@ -255,13 +271,11 @@ if not df.empty:
         month_options = [pd.to_datetime(m).strftime('%y년 %m월') for m in all_available_months]
         reversed_month_options = month_options[::-1]
         
-        # [수정] 서브헤더 지도 아이콘 반영 🗺️
         st.subheader("🗺️ 서울 랜드마크 시세트래킹 지도")
         st.caption("각 자치구 대장주의 **'국민평형(84㎡)'** 월간 평균 실거래 금액 스냅샷입니다. (모바일에서는 지도를 좌우로 밀어서 보세요👉)")
         
         col1, col2 = st.columns([1, 1])
         with col1:
-            # [수정] 달력 아이콘 반영 📅
             chosen_month_str = st.selectbox("📅 분석 기준월 (클릭하여 변경)", options=reversed_month_options, index=0)
             chosen_month_date = all_available_months[month_options.index(chosen_month_str)]
 
@@ -336,7 +350,6 @@ if not df.empty:
 
     # ==================== TAB 1: 주간 실거래 하이라이트 ====================
     with main_tab_new:
-        # [수정] 서브헤더 타겟 아이콘 반영 🎯
         st.markdown("<h2>🎯 서울 랜드마크 주간 실거래 하이라이트</h2>", unsafe_allow_html=True)
         
         unique_dates = sorted(df['수집일자'].dropna().dt.date.unique(), reverse=True)[:30]
@@ -561,7 +574,6 @@ if not df.empty:
         if st.session_state['selected_gu'] == '전체구': gu_filtered_df = df.copy()
         else: gu_filtered_df = df[df['자치구'] == st.session_state['selected_gu']].copy()
 
-        # [수정] 사이드바 단지 선택 아이콘 반영 📍
         st.sidebar.header("📍 단지 및 평형 선택")
         if not gu_filtered_df.empty:
             apt_list = sorted(gu_filtered_df['단지선택명'].unique())
