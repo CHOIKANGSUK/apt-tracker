@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# [전역 패치] 모바일 가독성 최적화 및 드롭다운 가독성 극대화 CSS
+# [전역 패치] 모바일 최적화 및 드롭다운/테이블 디자인 CSS
 st.markdown("""
 <style>
     @media (max-width: 768px) {
@@ -34,17 +34,21 @@ st.markdown("""
         scrollbar-width: none;
     }
     
-    /* 🌟 드롭다운 메뉴 및 텍스트 가독성(선명도) 극대화 패치 🌟 */
-    div[data-baseweb="select"] > div {
-        font-weight: 600 !important; /* 선택된 글자 굵게 */
-        color: #0f172a !important; /* 완전 진한 색으로 대비 높임 */
+    /* 🌟 핵심 패치: 클릭 시 열리는 '드롭다운 목록' 글씨 선명도 극대화 🌟 */
+    div[data-baseweb="popover"] li[role="option"],
+    div[data-baseweb="popover"] li[role="option"] span,
+    div[data-baseweb="popover"] li[role="option"] div {
+        color: #111827 !important; /* 완전 진한 검남색으로 변경 */
+        font-weight: 600 !important; /* 글씨 두께를 굵게 변경하여 뿌연 현상 제거 */
+        font-size: 15px !important; /* 글씨 크기 약간 확대 */
     }
-    ul[role="listbox"] li {
-        font-weight: 600 !important; /* 드롭다운 목록 글자 굵게 */
-        color: #1e293b !important; /* 목록 글자 진하게 */
-        font-size: 0.9rem !important;
+    
+    /* 목록에 마우스를 올렸을 때 배경색 조금 더 선명하게 */
+    div[data-baseweb="popover"] li[role="option"]:hover {
+        background-color: #f1f5f9 !important; 
     }
-    /* 멀티셀렉트 태그(선택된 항목) 색상 눈 편안하게 변경 */
+
+    /* 멀티셀렉트 선택된 '태그' 박스 디자인 (빨간색 대신 눈 편한 스카이블루) */
     span[data-baseweb="tag"] {
         background-color: #e0f2fe !important;
         color: #0369a1 !important;
@@ -103,7 +107,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
-def load_data_v6_40():
+def load_data_v6_41():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -213,7 +217,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_40()
+df = load_data_v6_41()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -255,7 +259,7 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.40")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.41")
 
     main_tab0, main_tab_new, main_tab_budget, main_tab1, main_tab2 = st.tabs([
         "🗺️ 시세트래킹 지도", 
