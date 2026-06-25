@@ -119,7 +119,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
-def load_data_v6_43():
+def load_data_v6_44():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -229,7 +229,7 @@ def get_apt_info(apt_name, pyung=None):
     elif "북한산아이파크" in clean_name: info.update({"세대수": "2,061세대", "준공": "2004.07", "용적률": "247%", "구조": "방3/화2"})
     return info
 
-df = load_data_v6_43()
+df = load_data_v6_44()
 
 if not df.empty:
     df['단지선택명'] = df['법정동'].astype(str).str.strip() + " " + df['아파트명'].astype(str).str.strip()
@@ -255,7 +255,7 @@ if not df.empty:
         "도봉구": "북한산 아이파크", "강북구": "북서울자이폴라리스", "노원구": "중계 청구3차", "성북구": "래미안길음센터피스",
         "은평구": "녹번역e편한세상캐슬", "서대문구": "e편한세상신촌", "종로구": "경희궁자이 2단지", "동대문구": "롯데캐슬 SKY-L65", "중랑구": "사가정센트럴아이파크",
         "마포구": "마포프레스티지자이", "용산구": "이촌동 한가람", "중구": "서울역센트럴자이", "성동구": "래미안옥수리버젠", "광진구": "광장힐스테이트", "강동구": "올림픽파크포레온",
-        "강서구": "마곡엠밸리7단지", "양천구": "목동힐스테이트", "영등포구": "당산센트럴아이파크", "동작구": "아크로리버하임", "서초구": "아크ro리버파크", "강남구": "래미안대치팰리스", "송파구": "리센츠",
+        "강서구": "마곡엠밸리7단지", "양천구": "목동힐스테이트", "영등포구": "당산센트럴아이파크", "동작구": "아크로리버하임", "서초구": "아크로리버파크", "강남구": "래미안대치팰리스", "송파구": "리센츠",
         "구로구": "신도림4차 e-편한세상", "금천구": "롯데캐슬골드파크3차", "관악구": "e편한세상서울대입구"
     }
 
@@ -271,7 +271,7 @@ if not df.empty:
 
     df['is_landmark'] = df['단지선택명'].isin(landmark_match_keys)
 
-    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.43")
+    st.title("🏢 강석의 서울 랜드마크 시세 마스터 v6.44")
 
     main_tab0, main_tab_new, main_tab_budget, main_tab1, main_tab2 = st.tabs([
         "🗺️ 시세트래킹 지도", 
@@ -364,7 +364,7 @@ if not df.empty:
             fig_idx.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
             st.plotly_chart(fig_idx, use_container_width=True)
 
-    # ==================== TAB 1: 주간 실거래 하이라이트 (🔥 최근 30일 통합 기본값 확장) ====================
+    # ==================== TAB 1: 주간 실거래 하이라이트 ====================
     with main_tab_new:
         st.markdown("<h2>🎯 서울 랜드마크 주간 실거래 하이라이트</h2>", unsafe_allow_html=True)
         
@@ -376,7 +376,6 @@ if not df.empty:
             if d == datetime.now().date(): return f"🗓️ {base_str} 오늘 공개분"
             return f"🗓️ {base_str} 공개분"
 
-        # [수정 패치] 기본 노출 단위를 최근 7일에서 30일로 확장 변경
         date_options = {"🌟 최근 30일 통합 보기 (기본값)": "30days"}
         for d in unique_dates:
             date_options[format_korean_date(d)] = d
@@ -386,7 +385,6 @@ if not df.empty:
         
         if target_val == "30days":
             latest_date = df['수집일자'].max()
-            # [수정 패치] days=7을 days=30으로 연산 임계값 전면 확대
             filter_start = latest_date - timedelta(days=30)
             recent_df = df[df['수집일자'] >= filter_start].copy()
             st.caption(f"**조회 기준:** 최근 30일간 ({filter_start.strftime('%m/%d')} ~ {latest_date.strftime('%m/%d')}) 국토부에 새롭게 등록된 실거래 통합본")
@@ -575,15 +573,19 @@ if not df.empty:
             st.markdown(html, unsafe_allow_html=True)
             st.caption("※ 입지점수는 강석 아파트 연구소의 자체 기준(교통+학군+환경)에 의해 산정되었습니다.")
 
-    # ==================== TAB 3: 단일 단지 시황 분석 ====================
+    # ==================== TAB 3: 단일 단지 시황 분석 (🔥 UI 에러 해결) ====================
     with main_tab1:
         if 'selected_gu' not in st.session_state: st.session_state['selected_gu'] = '전체구'
         seoul_gus = ["전체구", "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구", "노원구", "도봉구", "동대문구", "동작구", "마포구", "서대문구", "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구", "용산구", "은평구", "종로구", "중구", "중랑구"]
 
-        with st.expander(f"🗺️ 현재 선택된 지역: [ {st.session_state['selected_gu']} ] (터치하여 변경)", expanded=False):
+        # [핵심 패치] 이모지와 화살표(chevron) 아이콘이 겹쳐서 'arr' 텍스트로 깨지는 버그를 원천 차단하기 위해
+        # 현재 선택된 지역을 텍스트로 확실히 노출시키고, 펼침 메뉴 제목은 깔끔하게 수정했습니다.
+        st.markdown(f"<div style='font-size:1.15rem; font-weight:bold; color:#0f172a; margin-bottom:12px;'>📍 현재 분석 지역 : <span style='color:#3b82f6;'>{st.session_state['selected_gu']}</span></div>", unsafe_allow_html=True)
+
+        with st.expander("🔍 다른 자치구로 변경하기", expanded=False):
             grid_cols = st.columns(3)
             for idx, gu in enumerate(seoul_gus):
-                button_label = f"🌐 {gu}" if gu == "전체구" and gu == st.session_state['selected_gu'] else (f"📍 {gu}" if gu == st.session_state['selected_gu'] else gu)
+                button_label = f"🌐 {gu}" if gu == "전체구" and gu == st.session_state['selected_gu'] else (f"✅ {gu}" if gu == st.session_state['selected_gu'] else gu)
                 with grid_cols[idx % 3]:
                     if st.button(button_label, key=f"gu_btn_{gu}", use_container_width=True):
                         st.session_state['selected_gu'] = gu
